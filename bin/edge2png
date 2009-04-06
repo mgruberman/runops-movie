@@ -1,0 +1,169 @@
+#!/opt/perl/bin/perl
+use strict;
+use warnings;
+use feature ':5.10';
+use Treemap::Squarified;
+use Treemap::Output::Imager;
+use Treemap::Input::XML ();
+use File::Basename qw( dirname );
+use lib dirname(__FILE__);
+use TM qw( size );
+
+my $out_png = "$ARGV[0].png";
+
+if ( ! -e 'ImUgly.ttf' ) {
+    die 'Missing ImUgly.ttf';
+}
+
+my $in_size = "$ARGV[0].size";
+my $in_edge = "$ARGV[0].edge";
+my $in_type = "$ARGV[0].type";
+my $in_name = "$ARGV[0].name";
+
+say "Read $_ (@{[ size( -s $_ ) ]})" for $in_size, $in_edge, $in_type, $in_name;
+my $input = Treemap::Input::Edge->new;
+$input->load(
+    size => $in_size,
+    edge => $in_edge,
+	type => $in_type,
+    names => $in_name,
+);
+
+my $output = Treemap::Output::Imager->new(
+    WIDTH => 1024,
+    HEIGHT => 768,
+    FONT_FILE => 'ImUgly.ttf',
+);
+
+my $treemap = Treemap::Squarified->new(
+    INPUT=> $input,
+    OUTPUT=>$output,
+);
+
+$treemap->map;
+
+$output->save($out_png);
+say "Wrote $out_png (@{[ size( -s $out_png ) ]})";
+exit;
+
+package Treemap::Input::Edge;
+use strict;
+use warnings;
+use constant Tie => 'Treemap::Input::Edge::Tie';
+
+package Treemap::Input::Edge::Tie;
+use strict;
+use warnings;
+use feature ':5.10';
+use constant SIZE   => 0;
+use constant EDGE   => 1;
+use constant TYPE   => 2;
+use constant NAMES  => 3;
+use constant NAME   => 4;
+use constant COLORS => {
+    null => 'grey',
+    pvgv => 'red',
+    pvav => 'green',
+    pvcv => 'cyan',
+    pvmg => 'golden',
+    pvio => 'golden',
+    ''   => 'black',
+    pvbm => 'yellow',
+    nv   => 'yellow',
+    pvlv => 'yellow',
+    pv   => 'blue',
+    iv   => 'yellow',
+    rv   => 'orange',
+    pviv => 'yellow',
+    pvnv => 'yellow',
+    pvhv => 'brown',
+};
+
+my %seen;
+sub TIEHASH {
+    my ( undef, @s ) = @_;
+    bless \ @s, $_[0];
+}
+sub FETCH {
+    my ( $self, $key ) = @_;
+
+    given ( $key ) {
+        when('colour') {
+            my $name = $self->[NAME];
+            my $type = $self->[TYPE]{ $name };
+            if ( ! defined $type ) {
+                say "Missing type $name";
+                $type = '';
+            }
+            my $color;
+            if ( ! exists COLORS->{$type} ) {
+                say "Missing color [$type]";
+                $color = COLORS->{''};
+            }
+            else {
+                $color = COLORS->{$type};
+            }
+            return $color;
+        }
+        when ('children') {
+            my $class    = ref $self;
+            my $outbound = $self->[EDGE]{$self->[NAME]};
+            return if ! $outbound;
+
+            my @children =
+                map {
+                    my $name = $_;
+                    my %child;
+                    tie %child, $class,
+                        $self->[SIZE],
+                        $self->[EDGE],
+                        $self->[TYPE],
+                        $self->[NAMES],
+                        $name;
+
+                    \ %child;
+                }
+                grep { exists $self->[TYPE]{$_} }
+                    # grep { 0.000001 <= $self->[SIZE]{$_} / $self->[SIZE]{root} }
+                @$outbound;
+
+            return \ @children;
+        }
+        when ('name') {
+            return $self->[NAMES]{ $self->[NAME] } // '';
+            #return $self->[NAME];
+        }
+        when ('size') {
+            return $self->[SIZE]{$self->[NAME]};
+        }
+        default {
+            die "@_";
+        }
+    }
+}
+
+package Treemap::Input::Edge;
+use Treemap::Input;
+BEGIN { @Treemap::Input::Edge::ISA = 'Treemap::Input' }
+
+use Storable qw( retrieve );
+
+BEGIN { our $VERSION = '0.01' }
+
+sub load {
+    my ( $self, %path ) = @_;
+
+    $DB::signal = 1;
+    my %hash;
+    tie %hash, Treemap::Input::Edge::Tie,
+        retrieve($path{size}),
+        retrieve($path{edge}),
+        retrieve($path{type}),
+        retrieve($path{names}),
+        'root';
+    $self->{DATA} = \ %hash;
+
+    return 1;
+}
+
+1;

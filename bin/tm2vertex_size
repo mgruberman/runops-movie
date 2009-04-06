@@ -1,0 +1,27 @@
+#!/opt/perl/bin/perl
+use strict;
+use warnings;
+use feature ':5.10';
+use Storable qw( store );
+use File::Basename qw( dirname );
+use lib dirname( __FILE__ );
+use TM qw( size );
+
+my $in_pro     = "$ARGV[0].pro";
+my $out_vertex = "$ARGV[0].vertex_size";
+
+open my($fh,), '<', $in_pro
+  or die "Can't read $in_pro: $!";
+
+my %vertex_size;
+say STDERR "Read $in_pro (@{[ size( -s $in_pro ) ]})";
+while (defined( my $_ = <$fh>)) {
+    next if !( my ( $vertex, $size ) = /^size\D+(\d+)\D+(\d+)/ );
+
+    $vertex_size{sprintf '%x', $vertex} += $size;
+}
+$vertex_size{'root'} = 0;
+
+store( \ %vertex_size, $out_vertex );
+say STDERR "Wrote $out_vertex (@{[ size( -s $out_vertex ) ]})";
+

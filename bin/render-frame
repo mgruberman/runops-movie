@@ -1,0 +1,39 @@
+#!/bin/bash
+set -e
+
+function frame () {
+    echo "frame-$*"
+    time eval "frame-$*"
+}
+
+frame read\
+    --log $1.log\
+    --name $1
+frame make-graph\
+    --contains $1.contains\
+    --size $1.size\
+    --share $1.share\
+    --graph $1.graph
+frame deparent\
+    --graph $1.graph\
+    --dag $1.dag
+# 
+# # echo edge-unparent $1
+# # edge-unparent $1
+# 
+# echo tm2vertex_size $1
+# tm2vertex_size $1
+# 
+# echo tm2size $1
+# tm2size $1
+# 
+# echo graph2names $1
+# graph2names $1
+# 
+# echo tm2type $1
+# tm2type $1
+# 
+# echo edge2png $1
+# edge2png $1
+# 
+# #open $1.png

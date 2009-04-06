@@ -1,0 +1,64 @@
+#!/opt/perl/bin/perl
+use strict;
+use warnings;
+use feature ':5.10';
+use autodie 'system';
+use POSIX qw( ENOENT );
+
+# Skip forward to the first frame.
+my $frame;
+while (my $_ = <STDIN>) {
+  if ( /^Runops::Movie frame (\d+)/ ) {
+    $frame = $1;
+    last;
+  }
+}
+
+FRAME:
+while (1) {
+  my $fn = 'frame.log';
+  open my($fh), '>', $fn
+    or die "Can't open $fn for writing: !";
+  
+ LINE:
+  while ( 1 ) {
+    my $_ = <STDIN>;    
+    if ( ! defined ) {
+      print { $fh } $_
+        or die "Can't write to $fn: $!";
+      close $fh
+	or die "Can't close $fn: $!";
+      system 'treemap-arenalog', 'frame';
+      rename 'frame.png', sprintf 'frame-%04x.png', $frame
+	or die "Can't rename frame.png: $!";
+      undef $!;
+      unlink glob 'frame.*';
+      if ( $! && ENOENT != $! ) {
+	die "Can't unlink $fn: $!";
+      }
+      last FRAME;
+    }
+    elsif ( /^Runops::Movie frame (\d+)/ ) {
+      $frame = $1;
+      close $fh
+	or die "Can't close $fn: $!";
+      system 'treemap-arenalog', 'frame';
+      rename 'frame.png', sprintf 'frame-%04x.png', $frame
+	or die "Can't rename frame.png: $!";
+      undef $!;
+      unlink glob 'frame.*';
+      if ( $! && ENOENT != $! ) {
+	die "Can't unlink $fn: $!";
+      }
+      next FRAME;
+    }
+    else {
+      print { $fh } $_
+        or die "Can't write to $fn: $!";
+    }
+  }
+}
+
+sub run {
+  system( 'treemap-arenalog', 'frame' );
+}

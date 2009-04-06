@@ -1,0 +1,118 @@
+#!/opt/perl/bin/perl
+use strict;
+use warnings;
+use 5.010_000;
+use feature ':5.10';
+use autodie qw( seek );
+use warnings FATAL => 'all';
+use File::Basename qw( dirname );
+use lib dirname( __FILE__ );
+use TM qw( size );
+
+use Getopt::Long qw( GetOptions );
+GetOptions(
+    help         => sub { die 'pod2usage( -verbose => 2 )' },
+    'contains=s' => \my($in_contains),
+    'size=s'     => \my($in_size),
+    'share=s'    => \my($in_share),
+    'graph=s'    => \my($out_graph),
+    ) or die 'pod2usage( -verbose => 2 )';
+
+my $contains = read_db( $in_contains );
+my $sizes    = read_db( $in_size );
+my $shares   = read_db( $in_share );
+
+# Add verticies
+#
+my %vertices;
+say 'vertex(Id).';
+say "Read $in_file (@{[ size( -s $in_file ) ]})";
+seek $fh, 0, 0;
+while (defined( my $_ = <$fh>)) {
+    next if !( my ( $x, $y ) = /^contains[^[:xdigit:]]+([[:xdigit:]]+)[^[:xdigit:]]+([[:xdigit:]]+)/ );
+
+    $vertices{$x} = undef;
+    $vertices{$y} = undef;
+}
+
+# Add missing vertices
+#
+say 'missing(vertex(Id)).';
+say "Read $in_file (@{[ size( -s $in_file ) ]})";
+seek $fh, 0, 0;
+while (defined(my $_ = <$fh>)) {
+    next if !( my ( $x ) = /^size[^[:xdigit:]]+([[:xdigit:]]+)/ );
+
+    next if exists $vertices{$x};
+
+    say "missing(vertex($x)).";
+    $vertices{$x} =  undef;
+}
+
+# Add edges, but only if they don't produce cycles
+#
+say 'edge(ParentId,ChildId).';
+say "Read $in_file (@{[ size( -s $in_file ) ]})";
+my %contained;
+my %edge;
+seek $fh, 0, 0;
+while (defined(my $_ = <$fh>)) {
+    next if !( my ( $x, $y ) = /^(?:contains|share)[^[:xdigit:]]+([[:xdigit:]]+)[^[:xdigit:]]+([[:xdigit:]]+)/ );
+
+    $edge{$x}{$y} = undef;
+    if ( is_self_loop_vertex( $y ) ) {
+        delete $edge{$x}{$y};
+        if ( ! keys %{ $edge{$x} } ) {
+            delete $edge{$x};
+        }
+    }
+    else {
+        $contained{$y} = undef;
+    }
+}
+
+# Exterior nodes become property of 'root'
+#
+{
+    say q{edge('root',Id).};
+    keys %vertices;
+    my $x;
+    my %root;
+    $edge{'root'} = \ %root;
+
+    while ( defined( $x = each %vertices ) ) {
+        next if ! exists $contained{$x};
+        $root{$x} = undef;
+    }
+}
+undef %contained;
+undef %vertices;
+
+store( \%edge, $out_edge );
+say "Wrote $out_edge (@{[ size( -s $out_edge ) ]})";
+
+sub is_self_loop_vertex {
+    my ( $v ) = @_;
+
+    my @todo = $v;
+    while ( @todo ) {
+        my $x = shift @todo;
+        my $children_h = $edge{$x};
+        next if ! $children_h;
+
+        my @children = keys %$children_h;
+        return 1 if grep { $v eq $_ } @children;
+        push @todo, @children;
+    }
+
+    return 0;
+}
+
+sub read_db {
+    my ( $nm ) = @_;
+    open my($fh), '<', $nm
+	or die "Can't open $nm: $!";
+    
+    my $db;
+    
+}

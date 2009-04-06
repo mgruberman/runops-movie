@@ -1,0 +1,2 @@
+#!/bin/sh
+bzcat movie.bz2 | frame-runner
