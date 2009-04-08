@@ -3,51 +3,71 @@ use strict;
 use warnings;
 use 5.010_000;
 use feature ':5.10';
+use File::Spec::Functions qw( catfile );
 use Getopt::Long qw( GetOptions );
-use File::Basename qw( dirname );
-use lib dirname(__FILE__);
-use TM ();
-BEGIN { *pretty_size = \&TM::size }
+use Runops::Movie::Util qw( pretty_size );
 
 # Options
 #
 my $VALID_POINTER = 7;
 my $SV_SIZE = 64;
 my $CV_SIZE = 3000;
-my $in_log;
-my $name;
+my %out;
 GetOptions(
     help              => sub{ die 'pod2usage( -verbose => 2 )' },
     'sv_size=i'       => \ $SV_SIZE,
     'CV_SIZE=i'       => \ $CV_SIZE,
     'valid_pointer=i' => \ $VALID_POINTER,
-    'log=s'           => \ $in_log,
-    'name=s'          => \ $name,
-);
-if ( !( $name && $in_log ) ) {
-    die 'pod2usage( -verbose => 1 )';
+
+    'in=s'            => \ my( $in_file ),
+    'dir=s'           => \ my( $out_dir ),
+    map {; "$_=s" => \ $out{$_}{name} }
+    qw( contains type file name stash size shares function ),
+)
+  or die 'pod2usage( -verbose => 2 )';
+
+# --dir automagic
+#
+if ( $out_dir ) {
+    $out{$_}{name} //= catfile( $out_dir, "frame.$_" ) for keys %out;
 }
 
-my %FH;
-sub FH {
-    return $FH{$_[0]} //= do {
-	open my $fh, '>', $_[0]
-	    or die "Can't open $_[0] for writing: $!";
-	$fh;
-    };
+# Option validation
+#
+if ( ! $in_file ) {
+    die 'pod2usage( -verbose => 2 )';
+}
+if ( $out_dir ) {
+    # Everything is a-ok
+}
+elsif ( my @missing =
+            grep { ! $out{$_}{name} }
+            @out{qw( contains type file name stash size shares function )}
+    ) {
+    # Something is missing
+    die "Missing: @missing";
 }
 
-open my($fh), '<', $in_log
-    or die "Can't open $in_log: $!";
+# Open files
+#
+open my($in), '<', $in_file
+    or die "Can't open $in_file: $!";
+for my $nm ( sort keys %out ) {
+    open $out{$nm}{fh}, '>', $out{$nm}{name}
+        or die "Can't open $out{$nm}{name} for writing: $!";
+}
 
+
+# Big damn readline loop
+#
 my $self;
 my $type;
-while ( my $line = <$fh>) {
+while ( my $line = <$in>) {
     given ( $line ) {
         when ( /^SV = (\w+)\S+ at 0x([[:xdigit:]]+)/ ) {
             $type = "$1";
             $self = "$2";
-	    type( $self );
+            type( $self );
         }
         when ( ! defined $type ) {
         }
@@ -58,7 +78,7 @@ while ( my $line = <$fh>) {
                         when (/^\s+LEN\s+=\s+(\d+)/) {
                             my $len = 0 + $1;
                             my $size = $SV_SIZE + $len;
-			    size( $self, $size );
+                            size( $self, $size );
                         }
                     }
                 }
@@ -87,7 +107,7 @@ SV = PVCV(0xa84f690) at 0xadab3d4
 
                     given ($line) {
                         when (/^\s+REFCNT/) {
-			    size( $self, $CV_SIZE );
+                            size( $self, $CV_SIZE );
                         }
                         when (/^\s+PADLIST\s+=\s+0x([[:xdigit:]]+)/ ) {
                             contains( $self, $1 );
@@ -95,11 +115,11 @@ SV = PVCV(0xa84f690) at 0xadab3d4
                         when ( /^\s+GVGV::GV = [^"]*"(.+)" :: "(.+)"/ ) {
                             my $packaged = "$1";
                             my $function = "$2";
-			    function( $self, "\Q$packaged", "\Q$function" );
+                            function( $self, "\Q$packaged", "\Q$function" );
                         }
                         when ( /^\s+FILE = "(.+)"/ ) {
                             my $file = "$1";
-			    file( $self, "\Q$file" );
+                            file( $self, "\Q$file" );
                         }
                     }
                 }
@@ -140,10 +160,10 @@ SV = PVCV(0xa84f690) at 0xadab3d4
                             contains( $self, "$1" );
                         }
                         when (/^\s+NAME = "(.+)"/) {
-			    name( $self, "\Q$1" );
+                            name( $self, "\Q$1" );
                         }
                         when (/^\s+GvSTASH = 0x[[:xdigit:]]+\s*"(.+)"/ ) {
-			    stash( $self, "\Q$1" );
+                            stash( $self, "\Q$1" );
                         }
                     }
                 }
@@ -172,12 +192,12 @@ ARRAY(0xba63f18)
                     given ($line) {
                         when ( /^\s+MAX\s+=(\d+)/ ) {
                             my $size = $SV_SIZE * $1;
-			    size( $self, $size );
+                            size( $self, $size );
                         }
                         when (/^\s+\[0x([[:xdigit:]]+)\s+".+"\]\s+=>\s+0x([[:xdigit:]]+)/){
                             my $ptr1 = "$1";
                             my $ptr2 = "$2";
-			    shares( $self, $ptr1 );
+                            shares( $self, $ptr1 );
                             contains( $self, $ptr2 );
                         }
                     }
@@ -185,7 +205,7 @@ ARRAY(0xba63f18)
                 when ('NULL') {
                     given ($line) {
                         when(/^\s+REFCNT/) {
-			    size( $self, $SV_SIZE );
+                            size( $self, $SV_SIZE );
                         }
                     }
                 }
@@ -209,7 +229,7 @@ AvARRAY(0xcbaef08) = {{0xb75bd480,0xb7b776cc,0xb79dfbc8,0xb75e5ee4,0xb7664148,0x
 
                     given ($line) {
                         when (/^  MAX = (\d+)/) {
-			    size( $self, ($SV_SIZE * 3 + 4*$1) );
+                            size( $self, ($SV_SIZE * 3 + 4*$1) );
                         }
                         when (/^AvARRAY\(+0x[[:xdigit:]]+\) = \{+/ ) {
                             pos() = $-[0];
@@ -241,19 +261,16 @@ AvARRAY(0xcbaef08) = {{0xb75bd480,0xb7b776cc,0xb79dfbc8,0xb75e5ee4,0xb7664148,0x
                         }
                     }
                 }
-                default {
-#                    say;
-                }
             }
         }
     }
 }
 
-say "Wrote $_->[0] ($_->[1])"
-    for
-    map [ $_, pretty_size( -s ) ],
-    map "$name.$_",
-    qw( type function file name stash size shares contains );
+for my $nm ( sort keys %out ) {
+    close $out{$nm}{fh}
+        or warn "Can't flush $out{$nm}{name}: $!";
+    say "Wrote $out{$nm}{name} (@{[ pretty_size( -s $out{$nm}{name} ) ]})";
+}
 
 sub type;
 sub function;
@@ -264,15 +281,18 @@ sub size;
 sub shares;
 BEGIN {
     for my $nm ( qw( type function file name stash size shares ) ) {
-        eval qq{sub $nm { local \$" = ','; say { FH( "\$name.$nm" ) } "$nm(\@_)." }};
-	die $@ if $@;
+        no strict 'refs';
+        *$nm = sub {
+            use strict;
+            local $" = ',';
+            say { $out{$nm}{fh} } "$nm(@_).";
+        };
     }
 }
 sub contains {
     if ( $VALID_POINTER <= length $_[1] ) {
-	local $" = ',';
-	say { FH( "$name.contains" ) } "contains(@_).";
+        local $" = ',';
+        say { $out{contains}{fh} } "contains(@_).";
     }
     return;
 }
-

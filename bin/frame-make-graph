@@ -4,92 +4,418 @@ use warnings;
 use 5.010_000;
 use feature ':5.10';
 use autodie qw( seek );
-use warnings FATAL => 'all';
-use File::Basename qw( dirname );
-use lib dirname( __FILE__ );
-use TM qw( size );
-
 use Getopt::Long qw( GetOptions );
+use Judy::SL qw( Set Get );
+use Runops::Movie::Util qw( pretty_size );
+use File::Spec::Functions qw( catfile );
+use Carp ();
+$SIG{__WARN__} = \&Carp::cluck;
+$| = 1;
+sub say { my (undef,undef,$l)=caller; CORE::say "$1 @_" }
+
+# Read options
+#
+my ( %in, %out );
 GetOptions(
     help         => sub { die 'pod2usage( -verbose => 2 )' },
-    'contains=s' => \my($in_contains),
-    'size=s'     => \my($in_size),
-    'share=s'    => \my($in_share),
-    'graph=s'    => \my($out_graph),
-    ) or die 'pod2usage( -verbose => 2 )';
+    'dir=s'      => \my($dir),
+    (
+        map {; "$_=s" => \$in{$_}{name} }
+        qw( contains size shares function vertex )
+    ),
+    (
+        map {; "$_=s" => \$out{$_}{name} }
+        qw( fulledge )
+    )
+)
+  or die 'pod2usage( -verbose => 2 )';
 
-my $contains = read_db( $in_contains );
-my $sizes    = read_db( $in_size );
-my $shares   = read_db( $in_share );
+# --dir automagic
+#
+if ( $dir ) {
+    $in{$_}{name} //= catfile( $dir, "frame.$_" ) for keys %in;
+    $out{$_}{name} //= catfile( $dir, "frame.$_" ) for keys %out;
+}
+
+# Option validation
+#
+warn 'No option validation';
+
+{
+    package ZOMG;
+    use Carp qw( cluck confess );
+    use constant _ptr      => 0;
+    use constant _ptrptr   => 1;
+    use constant _type     => 2;
+    use constant _fulltype => 3;
+    use constant _innerobj => 4;
+    use constant _inner    => 5;
+    use constant NULL => 0x0;
+    sub TIEHASH {
+        my $args = $_[2];
+
+        # Allow spaces and such in the spec but remove them prior to use
+        #
+        my $fulltype = $_[1];
+        $fulltype =~ s/[^->\w:]+//g;
+
+        # Detect whether this is a simple object or not.
+        #
+        if ( -1 == index $fulltype, '->' ) {
+            
+            # Return a non-ZOMG object. No need to get extra re-dispatching
+            #
+            return $fulltype->TIEHASH( $args ? $args : () );
+        }
+        else {
+            my @self;
+            
+            # Tie a simple, non-ZOMG array internally.
+            #
+            my ( $type ) = $fulltype =~ /^([\w:']+)/
+                or die;
+            
+            my $innerobj = tie my(%inner), $type, $args ? $args : ();
+            $self[_inner] = \%inner;
+            $self[_innerobj] = $innerobj;
+
+            # Store the complete type: Judy::SL->Judy::SL->...
+            #
+            $self[_fulltype]  = $fulltype;
+            $self[_type]      = $type;
+
+            return bless \ @self, $_[0];
+        }
+    }
+    sub FETCH {
+        my $selfptr = $_[0][_innerobj]->ptr;
+
+        # Fetch the next hash.
+        #
+        say __LINE__." Judy::SL::Get( $selfptr, $_[1] )";
+        my ( $pval, $val ) = Judy::SL::Get( $selfptr, $_[1] );
+        say __LINE__." pval=@{[ $pval // 'nil' ]} val=@{[ $val // 'nil' ]} selfptr=$selfptr";
+        
+        # Autovivify the current hash.
+        #
+        if ( ! $pval ) {
+            my $oldselfptr = $selfptr;
+            say __LINE__." Judy::SL::Set($selfptr,$_[1],NULL)";
+            $pval = Judy::SL::Set( $selfptr, $_[1], NULL );
+            say __LINE__." pval=$pval selfptr=$selfptr key=$_[1]";
+            
+            if ( $oldselfptr != $selfptr ) {
+                $_[0][_innerobj]->setptr( $selfptr );
+            }
+        }
+
+        # Return the desired thing.
+        #
+        tie my(%h), ZOMG => $_[0][_type], { ptrptr => $pval };
+        return \ %h;
+    }
+    sub STORE {
+        my $selfptr = $_[0][_innerobj]->ptr;
+
+        # Fetch the current hash to detect orphans.
+        #
+        say __LINE__." Judy::SL::Get($selfptr,$_[1])";
+        my ( $pval, $val ) = Judy::SL::Get( $selfptr, $_[1] );
+        say __LINE__." pval=$pval val=$val selfptr=$selfptr key=$_[1]";
+        if ( $val ) {
+            warn sprintf "Orphaning %s(0x%x)", $_[0][_type], $val;
+        }
+
+        # Store the new pointer.
+        #
+        my $nextptr = tied( $_[2] )->ptr;
+        if ( $pval ) {
+            say __LINE__." Judy::Mem::Poke($pval,$nextptr)";
+            Judy::Mem::Poke( $pval, $nextptr );
+            say __LINE__." pval=$pval nextptr=$nextptr";
+        }
+        else {
+            my $oldselfptr = $selfptr;
+            say __LINE__." Judy::SL::Set($selfptr,$_[1],$nextptr)";
+            $pval = Judy::SL::Set( $selfptr, $_[1], $nextptr );
+            say __LINE__." pval=$pval selfptr=$selfptr key=$_[1] val=$nextptr";
+
+            if ( $oldselfptr != $selfptr ) {
+                $_[0][_innerobj]->setptr( $selfptr );
+            }
+        }
+
+        # Return the stored thingy.
+        #
+        return if ! defined wantarray;
+        tie my(%h), ZOMG => $_[0][_type], { ptrptr => $pval };
+        return \%h;
+    }
+    sub EXISTS {
+        return if ! defined wantarray;
+        
+        my $selfptr = $_[0][_innerobj]->ptr;
+    
+        # Find the desired thing.
+        #
+        my ( $pval, $val ) = Judy::SL::Get( $selfptr, $_[1] );
+        return $pval;
+    }
+    sub FIRSTKEY {
+        $DB::signal = 1;
+        my $selfptr = $_[0][_innerobj]->ptr;
+
+        my $empty = '';
+        say __LINE__." Judy::SL::First( $selfptr, '' )";
+        my ( $pval, $val, $key ) = Judy::SL::First( $selfptr, $empty );
+        say __LINE__." pval=$pval val=$val key=$key selfptr=$selfptr empty=$empty";
+        return $key;
+    }
+    sub NEXTKEY {
+        my $selfptr = $_[0][_innerobj]->ptr;
+    
+        say __LINE__." Judy::SL::Next($selfptr,$_[1])";
+        my ( $pval, $val, $key ) = Judy::SL::Next( $selfptr, $_[1] );
+        say __LINE__." pval=@{[ $pval // 'undef' ]} val=@{[ $val // 'undef' ]} key=@{[ $key // 'undef' ]} selfptr=$selfptr okey=$_[1]";
+        return $key;
+    }
+    sub DELETE { confess("DELETE( @_ )") }
+    sub CLEAR {
+        my $selfptr = $_[0][_innerobj]->ptr;
+    
+        say __LINE__." Judy::SL::Free($selfptr)";
+        Judy::SL::Free( $selfptr );
+        say __LINE__." selfptr=$selfptr";
+        $_[0][_innerobj]->setptr( $selfptr );
+    
+        return;
+    }
+    sub SCALAR { confess("SCALAR( @_ )") }
+    sub UNTIE {
+        say __LINE__.' UNTIE';
+    }
+    sub DESTROY {
+        say __LINE__.' DESTROY';
+    }
+
+
+
+
+    package Judy::SL;
+    use constant _ptrptr => 0;
+    use constant _ptr    => 1;
+    sub setptr {
+        if ( $_[0][_ptrptr] ) {
+            say __LINE__." Judy::Mem::Poke($_[0][_ptrptr],$_[1])";
+            Judy::Mem::Poke( $_[0][_ptrptr], $_[1] );
+            say __LINE__." _ptrptr=$_[0][_ptrptr] val=$_[1]";
+            
+            return $_[1];
+        }
+        else {
+            say __LINE__." _ptr=$_[1]";
+            return $_[0][_ptr] = $_[1];
+        }
+    }
+    sub ptr {
+        if ( my $ptr = $_[0][_ptr] ) {
+            say __LINE__." ptr=$ptr";
+            return $ptr;
+        }
+        elsif ( my $ptrptr = $_[0][_ptrptr] ) {
+            say __LINE__." Judy::Mem::Peek($ptrptr)";
+            $_[0][_ptr] = Judy::Mem::Peek( $ptrptr );
+            say __LINE__." ptr=$_[0][_ptr]";
+            return $_[0][_ptr];
+        }
+        else {
+            return 0;
+        }
+    }
+    sub TIEHASH {
+        my @self;
+        $self[_ptrptr] = $_[1]{ptrptr} if $_[1]{ptrptr};
+        $self[_ptr]    = $_[1]{ptr}    if $_[1]{ptr};
+
+        return bless \@self, $_[0];
+    }
+    sub FETCH {
+        my $ptr = $_[0]->ptr;
+        say __LINE__." Judy::SL::Get($ptr,$_[1])";
+        my ( $pval, $val ) = Judy::SL::Get( $ptr, $_[1] );
+        say __LINE__." pval=$pval val=$val";
+        return $val;
+    }
+    sub STORE {
+        my $ptr = $_[0]->ptr;
+        my $wasnil = ! $ptr;
+        say __LINE__." Judy::SL::Set($ptr,$_[1],$_[2])";
+        my $pval = Judy::SL::Set( $ptr, $_[1], $_[2] // 0 );
+        say __LINE__." pval=$pval ptr=$ptr key=$_[1] val=$_[2]";
+        if ( $wasnil ) {
+            $_[0]->setptr( $ptr );
+        }
+        return $_[2] // 0;
+    }
+    sub EXISTS {
+        my $ptr = $_[0]->ptr;
+        say __LINE__." Judy::SL::Get($ptr,$_[1])";
+        my ( $pval, $val ) = Judy::SL::Get( $ptr, $_[1] );
+        say __LINE__." pval=@{[ $pval // 'undef' ]} val=@{[ $val // 'undef' ]} ptr=$ptr key=$_[1]";
+        return !! $pval;
+    }
+    sub DELETE {
+        my $ptr = $_[0]->ptr;
+        die;
+        Judy::SL::Delete( $ptr, $_[1] );
+    }
+    sub CLEAR {
+        my $ptr = $_[0]->ptr;
+        die;
+        Judy::SL::Free( $ptr );
+    }
+    sub FIRSTKEY {
+        my $ptr = $_[0]->ptr;
+        my ( undef, undef, $key ) = Judy::SL::First( $ptr, '' );
+        return $key;
+    }
+    sub NEXTKEY {
+        my $ptr = $_[0]->ptr;
+        my ( undef, undef, $key ) = Judy::SL::Next( $ptr, $_[1] );
+        return $key;
+    }
+    sub SCALAR {
+        die;
+        return $_[0]->ptr;
+    }
+    sub UNTIE {
+        say __LINE__.' UNTIE';
+    }
+    sub DESTROY {
+        say __LINE__.' DESTROY';
+    }
+}
+
+
+
 
 # Add verticies
 #
-my %vertices;
-say 'vertex(Id).';
-say "Read $in_file (@{[ size( -s $in_file ) ]})";
-seek $fh, 0, 0;
-while (defined( my $_ = <$fh>)) {
-    next if !( my ( $x, $y ) = /^contains[^[:xdigit:]]+([[:xdigit:]]+)[^[:xdigit:]]+([[:xdigit:]]+)/ );
+my $vertices;
+{
+    say 'vertex(Id).';
 
-    $vertices{$x} = undef;
-    $vertices{$y} = undef;
+    say "Read $in{contains}{name} (@{[ pretty_size( -s $in{contains}{name} ) ]})";
+    open my($fh), '<', $in{contains}{name}
+        or die "Can't read $in{contains}{name}: $!";
+    while (defined( my $_ = <$fh>)) {
+        next if !( my ( $x, $y ) = /^contains\(([[:xdigit:]]+),([[:xdigit:]]+)\)\.$/ );
+        Judy::SL::Set( $vertices, $_, 0 ) for $x, $y;
+    }
 }
+
+
+
+
+{
+    say "Read $in{shares}{name} (@{[ pretty_size( -s $in{shares}{name} ) ]})";
+    open my($fh), '<', $in{shares}{name}
+        or die "Can't read $in{shares}{name}: $!";
+    while (defined( my $_ = <$fh>)) {
+        next if !( my ( $x, $y ) = /^shares\(([[:xdigit:]]+),([[:xdigit:]]+)\)\.$/ );
+        Judy::SL::Set( $vertices, $_, 0 ) for $x, $y;
+    }
+}
+
+
+
 
 # Add missing vertices
 #
-say 'missing(vertex(Id)).';
-say "Read $in_file (@{[ size( -s $in_file ) ]})";
-seek $fh, 0, 0;
-while (defined(my $_ = <$fh>)) {
-    next if !( my ( $x ) = /^size[^[:xdigit:]]+([[:xdigit:]]+)/ );
-
-    next if exists $vertices{$x};
-
-    say "missing(vertex($x)).";
-    $vertices{$x} =  undef;
+{
+    say 'missing(vertex(Id)).';
+    say "Read $in{size}{name} (@{[ pretty_size( -s $in{size}{name} ) ]})";
+    open my($fh), '<', $in{size}{name}
+        or die "Can't read $in{size}{name}: $!";
+    while (defined(my $_ = <$fh>)) {
+        next if !( my ( $x ) = /^size\(([[:xdigit:]]+)/ );
+        
+        Judy::SL::Set( $vertices, $x, 0 );
+    }
 }
+
+
+
 
 # Add edges, but only if they don't produce cycles
 #
-say 'edge(ParentId,ChildId).';
-say "Read $in_file (@{[ size( -s $in_file ) ]})";
-my %contained;
-my %edge;
-seek $fh, 0, 0;
-while (defined(my $_ = <$fh>)) {
-    next if !( my ( $x, $y ) = /^(?:contains|share)[^[:xdigit:]]+([[:xdigit:]]+)[^[:xdigit:]]+([[:xdigit:]]+)/ );
+tie my(%fulledge), ZOMG => '%Judy::SL->%Judy::SL';
 
-    $edge{$x}{$y} = undef;
-    if ( is_self_loop_vertex( $y ) ) {
-        delete $edge{$x}{$y};
-        if ( ! keys %{ $edge{$x} } ) {
-            delete $edge{$x};
+my $contained;
+{
+    say 'edge(ParentId,ChildId).';
+    
+    for my $file ( $in{contains}{name}, $in{shares}{name} ) {
+        say "Read $file (@{[ pretty_size( -s $file ) ]})";
+        open my($fh), '<', $file
+            or die "Can't open $file: $!";
+        
+        while (defined(my $_ = <$fh>)) {
+            next if !( my ( $x, $y ) = /^[^(]+\(([[:xdigit:]]+),([[:xdigit:]]+)/ );
+            
+            $fulledge{$x}{$y} = 0;
+            if ( is_self_loop_vertex( $y ) ) {
+                delete $fulledge{$x}{$y};
+
+                if ( ! keys %{$fulledge{$x}} ) {
+                    delete $fulledge{$x};
+                }
+            }
+            else {
+                Judy::SL::Set($contained,$y,0);
+            }
         }
     }
-    else {
-        $contained{$y} = undef;
-    }
 }
+
+use Data::Dumper;
+print Data::Dumper::Dumper(\%fulledge);
+
+
 
 # Exterior nodes become property of 'root'
 #
 {
     say q{edge('root',Id).};
-    keys %vertices;
     my $x;
-    my %root;
-    $edge{'root'} = \ %root;
+    
+    tie my(%root), ZOMG => '%Judy::SL';
+    my ( undef, undef, $x ) = Judy::SL::First( $vertices, '' );
+    while ( defined $x ) {
+        next if ! Judy::SL::Get($contained,$x);
+        $root{$x} = 0;
 
-    while ( defined( $x = each %vertices ) ) {
-        next if ! exists $contained{$x};
-        $root{$x} = undef;
+        (undef,undef,$x) = Judy::SL::Next($vertices,$x);
     }
-}
-undef %contained;
-undef %vertices;
 
-store( \%edge, $out_edge );
-say "Wrote $out_edge (@{[ size( -s $out_edge ) ]})";
+    $DB::signal= 1;
+    $fulledge{root} = \ %root;
+}
+Judy::SL::Free( $contained );
+Judy::SL::Free( $vertices );
+
+open $out{fulledge}{fh}, '>', $out{fulledge}{name}
+    or die "Can't open $out{fulledge}{name} for writing: $!";
+for my $x ( keys %fulledge ) {
+    my $yedge = $fulledge{$x};
+    for my $y ( keys %$yedge ) {
+        say { $out{fulledge}{fh} } "edge($x,$y).";
+    }
+    %$yedge = ();
+}
+%fulledge = ();
+untie %fulledge;
+say "Wrote $out{fulledge}{name} e(@{[ pretty_size( -s $out{fulledge}{name} ) ]})";
 
 sub is_self_loop_vertex {
     my ( $v ) = @_;
@@ -97,22 +423,12 @@ sub is_self_loop_vertex {
     my @todo = $v;
     while ( @todo ) {
         my $x = shift @todo;
-        my $children_h = $edge{$x};
-        next if ! $children_h;
-
-        my @children = keys %$children_h;
-        return 1 if grep { $v eq $_ } @children;
-        push @todo, @children;
+        my $yedge = $fulledge{$x};
+        for my $y ( keys %$yedge ) {
+            return 1 if $y eq $v;
+            push @todo, $y;
+        }
     }
 
     return 0;
-}
-
-sub read_db {
-    my ( $nm ) = @_;
-    open my($fh), '<', $nm
-	or die "Can't open $nm: $!";
-    
-    my $db;
-    
 }

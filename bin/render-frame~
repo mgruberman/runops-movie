@@ -7,14 +7,23 @@ function frame () {
 }
 
 frame read\
-    --in ooo/perlcritic.log\
-    --dir ooo
+    --log $1.log\
+    --contains $1.contains\
+    --type $1.type\
+    --file $1.file\
+    --name $1.name\
+    --stash $1.stash\
+    --size $1.size\
+    --shares $1.shares\
+    --function $1.function
 frame make-graph\
-    --dir ooo
-# frame deparent\
-#     --graph $1.graph\
-#     --dag $1.dag
-
+    --contains $1.contains\
+    --size $1.size\
+    --share $1.share\
+    --graph $1.graph
+frame deparent\
+    --graph $1.graph\
+    --dag $1.dag
 # 
 # # echo edge-unparent $1
 # # edge-unparent $1
