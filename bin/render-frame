@@ -11,9 +11,9 @@ frame read\
     --dir ooo
 frame make-graph\
     --dir ooo
-# frame deparent\
-#     --graph $1.graph\
-#     --dag $1.dag
+frame deparent\
+    --graph $1.graph\
+    --dag $1.dag
 
 # 
 # # echo edge-unparent $1
