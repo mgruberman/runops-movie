@@ -3,44 +3,26 @@ set -e
 
 function frame () {
     echo "frame-$*"
-    time eval "frame-$*"
+    time eval "DYLD_INSERT_LIBRARIES=/usr/lib/libduma.dylib /opt/perl/bin/perl frame-$*"
 }
 
-frame read\
-    --log $1.log\
-    --contains $1.contains\
-    --type $1.type\
-    --file $1.file\
-    --name $1.name\
-    --stash $1.stash\
-    --size $1.size\
-    --shares $1.shares\
-    --function $1.function
-frame make-graph\
-    --contains $1.contains\
-    --size $1.size\
-    --share $1.share\
-    --graph $1.graph
-frame deparent\
-    --graph $1.graph\
-    --dag $1.dag
-# 
-# # echo edge-unparent $1
-# # edge-unparent $1
-# 
-# echo tm2vertex_size $1
-# tm2vertex_size $1
-# 
-# echo tm2size $1
-# tm2size $1
-# 
-# echo graph2names $1
-# graph2names $1
-# 
-# echo tm2type $1
-# tm2type $1
-# 
-# echo edge2png $1
-# edge2png $1
-# 
-# #open $1.png
+#frame read\
+#    --in ooo/perlcritic.log\
+#    --dir ooo
+#frame make-graph\
+#    --dir ooo\
+#    --less-mem
+#frame deparent\
+#    --dir ooo\
+#    --less-mem
+#frame sum-size\
+#    --dir ooo\
+#    --less-mem
+#frame names\
+#    --dir ooo\
+#    --less-mem
+frame png\
+    --dir ooo\
+    --png ooo/perlcritic.png\
+    --less-mem
+open ooo/perlcritic.png

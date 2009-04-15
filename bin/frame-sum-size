@@ -1,0 +1,110 @@
+#!/opt/perl/bin/perl
+use strict;
+use warnings;
+use 5.010_000;
+use feature ':5.10';
+use Getopt::Long qw( GetOptions );
+use Runops::Movie::Util qw( pretty_size );
+use File::Spec::Functions qw( catfile );
+use Carp ();
+
+$SIG{__DIE__} = \&Carp::confess;
+
+GetOptions(
+    help            => sub { die 'pod2usage( -verbose => 2 )' },
+    'less-mem'      => \my($less_memory),
+    'dir=s'         => \my($dir),
+    'edge=s'        => \my($in_edge),
+    'vertex-size=s' => \my($in_vertex_size),
+    'size=s'        => \my($out_size),
+)
+  or die 'pod2usage( -verbose => 2 )';
+
+if ( $less_memory ) {
+    require Judy;
+}
+
+# --dir automagic
+#
+if ( $dir ) {
+    $in_edge        //= catfile( $dir, 'frame.edge' );
+    $in_vertex_size //= catfile( $dir, 'frame.size' );
+    $out_size       //= catfile( $dir, 'frame.sum-size' );
+}
+
+
+my %vertex_size;
+{
+    if ( $less_memory ) {
+        tie %vertex_size, 'Judy::L';
+    }
+
+    say "Read $in_vertex_size (@{[ pretty_size( -s $in_vertex_size ) ]})";
+    open my($fh), '<', $in_vertex_size
+        or die "Can't open $in_vertex_size: $!";
+    while (defined(my $_ = <$fh>)) {
+        next if !(my($x,$size) = /^size\(([[:xdigit:]]+),(\d+)\)\.$/);
+        $x = hex "0x$x";
+        $vertex_size{$x} = $size;
+    }
+}
+
+my %edge;
+{
+    if ( $less_memory ) {
+        tie %edge, Judy => 'Judy::L->Judy::1';
+    }
+
+    say "Read $in_edge (@{[ pretty_size( -s $in_edge ) ]})";
+    open my($fh), '<', $in_edge
+        or die "Can't open $in_edge: $!";
+    while (defined(my $_ = <$fh>)) {
+        next if !(my($x,$y) = /^edge\(([[:xdigit:]]+),([[:xdigit:]]+)\)\.$/);
+        $x = hex "0x$x";
+        $y = hex "0x$y";
+        $edge{$x}{$y} = $less_memory ? 1 : undef;
+    }
+}
+
+my %size;
+{
+    say 'Summing vertices';
+    if ( $less_memory ) {
+        tie %size, 'Judy::L';
+    }
+    $size{'0'} = all_successors('0');
+}
+
+{
+    open my($fh), '>', $out_size
+        or die "Can't open $out_size for writing: $!";
+    keys %size;
+    while ( defined( my $x = each %size ) ) {
+        my $size = $size{$x};
+
+        printf { $fh } "size(%x,%d).\n", $x, $size
+            or die "Can't write to $out_size: $!";
+    }
+    close $fh
+        or die "Can't flush $out_size: $!";
+    say "Wrote $out_size (@{[ pretty_size( -s $out_size ) ]})";
+}
+
+sub all_successors {
+    my ( $v ) = @_;
+
+    return $size{$v} if exists $size{$v};
+
+    my $sum = $vertex_size{$v} // 128;
+
+    my $outward_edges = $edge{$v};
+    if ( $outward_edges ) {
+        keys %$outward_edges;
+        while ( defined( my $child = each %$outward_edges ) ) {
+            my $child_sum = all_successors($child);
+            $sum += $child_sum;
+        }
+    }
+
+    return $size{$v} = $sum;
+}

@@ -4,92 +4,183 @@ use warnings;
 use 5.010_000;
 use feature ':5.10';
 use autodie qw( seek );
-use warnings FATAL => 'all';
-use File::Basename qw( dirname );
-use lib dirname( __FILE__ );
-use TM qw( size );
-
 use Getopt::Long qw( GetOptions );
+use Runops::Movie::Util qw( pretty_size );
+use File::Spec::Functions qw( catfile );
+use Judy 0.14;
+use Carp ();
+$SIG{__WARN__} = \&Carp::cluck;
+$| = 1;
+
+#$Devel::Trace::TRACE = 1;
+#Judy::trace(1);
+
+sub trace {
+    if ( $Devel::Trace::TRACE ) {
+        goto &Carp::cluck;
+    }
+}
+*Judy::trace = *Judy::SL::trace = \ &trace;
+
+# Read options
+#
+my ( %in, %out );
 GetOptions(
     help         => sub { die 'pod2usage( -verbose => 2 )' },
-    'contains=s' => \my($in_contains),
-    'size=s'     => \my($in_size),
-    'share=s'    => \my($in_share),
-    'graph=s'    => \my($out_graph),
-    ) or die 'pod2usage( -verbose => 2 )';
+    'less-mem'   => \my($less_memory),
+    'dir=s'      => \my($dir),
+    (
+        map {; "$_=s" => \$in{$_}{name} }
+        qw( contains size shares function vertex )
+    ),
+    (
+        map {; "$_=s" => \$out{$_}{name} }
+        qw( fulledge )
+    )
+)
+  or die 'pod2usage( -verbose => 2 )';
 
-my $contains = read_db( $in_contains );
-my $sizes    = read_db( $in_size );
-my $shares   = read_db( $in_share );
+# --dir automagic
+#
+if ( $dir ) {
+    $in{$_}{name} //= catfile( $dir, "frame.$_" ) for keys %in;
+    $out{$_}{name} //= catfile( $dir, "frame.$_" ) for keys %out;
+}
+
+# Option validation
+#
+trace( 'No option validation' );
+
+
 
 # Add verticies
 #
 my %vertices;
-say 'vertex(Id).';
-say "Read $in_file (@{[ size( -s $in_file ) ]})";
-seek $fh, 0, 0;
-while (defined( my $_ = <$fh>)) {
-    next if !( my ( $x, $y ) = /^contains[^[:xdigit:]]+([[:xdigit:]]+)[^[:xdigit:]]+([[:xdigit:]]+)/ );
-
-    $vertices{$x} = undef;
-    $vertices{$y} = undef;
+if ($less_memory) {
+    tie %vertices, 'Judy::1';
 }
+{
+    say 'vertex(Id).';
+
+    say "Read $in{contains}{name} (@{[ pretty_size( -s $in{contains}{name} ) ]})";
+    open my($fh), '<', $in{contains}{name}
+        or die "Can't read $in{contains}{name}: $!";
+    while (defined( my $_ = <$fh>)) {
+        next if !( my ( $x, $y ) = /^contains\(([[:xdigit:]]+),([[:xdigit:]]+)\)\.$/ );
+
+        $vertices{hex "0x$x"} = 1;
+        $vertices{hex "0x$y"} = 1;
+    }
+}
+
+
+
+{
+    say "Read $in{shares}{name} (@{[ pretty_size( -s $in{shares}{name} ) ]})";
+    open my($fh), '<', $in{shares}{name}
+        or die "Can't read $in{shares}{name}: $!";
+    while (defined( my $_ = <$fh>)) {
+        next if !( my ( $x, $y ) = /^shares\(([[:xdigit:]]+),([[:xdigit:]]+)\)\.$/ );
+        $vertices{hex "0x$x"} = 1;
+        $vertices{hex "0x$y"} = 1;
+    }
+}
+
+
+
 
 # Add missing vertices
 #
-say 'missing(vertex(Id)).';
-say "Read $in_file (@{[ size( -s $in_file ) ]})";
-seek $fh, 0, 0;
-while (defined(my $_ = <$fh>)) {
-    next if !( my ( $x ) = /^size[^[:xdigit:]]+([[:xdigit:]]+)/ );
-
-    next if exists $vertices{$x};
-
-    say "missing(vertex($x)).";
-    $vertices{$x} =  undef;
+{
+    say 'missing(vertex(Id)).';
+    say "Read $in{size}{name} (@{[ pretty_size( -s $in{size}{name} ) ]})";
+    open my($fh), '<', $in{size}{name}
+        or die "Can't read $in{size}{name}: $!";
+    while (defined(my $_ = <$fh>)) {
+        next if !( my ( $x ) = /^size\(([[:xdigit:]]+)/ );
+        
+        $vertices{ hex "0x$x" } = 1;
+    }
 }
+
+
 
 # Add edges, but only if they don't produce cycles
 #
-say 'edge(ParentId,ChildId).';
-say "Read $in_file (@{[ size( -s $in_file ) ]})";
-my %contained;
-my %edge;
-seek $fh, 0, 0;
-while (defined(my $_ = <$fh>)) {
-    next if !( my ( $x, $y ) = /^(?:contains|share)[^[:xdigit:]]+([[:xdigit:]]+)[^[:xdigit:]]+([[:xdigit:]]+)/ );
+my( %fulledge, %contained );
+if ( $less_memory ) {
+    tie %fulledge, Judy => 'Judy::L->Judy::1';
+    tie %contained, 'Judy::1';
+}
+{
+    say 'edge(ParentId,ChildId).';
+    
+    for my $file ( $in{contains}{name}, $in{shares}{name} ) {
+        say "Read $file (@{[ pretty_size( -s $file ) ]})";
+        open my($fh), '<', $file
+            or die "Can't open $file: $!";
+        
+        while (defined(my $_ = <$fh>)) {
+            next if !( my ( $x, $y ) = /^[^(]+\(([[:xdigit:]]+),([[:xdigit:]]+)/ );
+            $x = hex "0x$x";
+            $y = hex "0x$y";
+            
+            $fulledge{$x}{$y} = 1;
+            if ( is_self_loop_vertex( $y ) ) {
+                delete $fulledge{$x}{$y};
 
-    $edge{$x}{$y} = undef;
-    if ( is_self_loop_vertex( $y ) ) {
-        delete $edge{$x}{$y};
-        if ( ! keys %{ $edge{$x} } ) {
-            delete $edge{$x};
+                if ( ! keys %{$fulledge{$x}} ) {
+                    delete $fulledge{$x};
+                }
+            }
+            else {
+                $contained{$y} = 1;
+            }
         }
-    }
-    else {
-        $contained{$y} = undef;
     }
 }
 
 # Exterior nodes become property of 'root'
 #
 {
-    say q{edge('root',Id).};
-    keys %vertices;
-    my $x;
+    say q{edge(0,Id).};
+    
     my %root;
-    $edge{'root'} = \ %root;
-
-    while ( defined( $x = each %vertices ) ) {
-        next if ! exists $contained{$x};
-        $root{$x} = undef;
+    if ( $less_memory ) {
+        tie %root, 'Judy::1';
     }
-}
-undef %contained;
-undef %vertices;
+    keys %vertices;
+    while ( defined( my $x = each %vertices ) ) {
+        if ( $contained{ $x } ) {
+        }
+        else {
+            $root{$x} = 1;
+        }
+    }
 
-store( \%edge, $out_edge );
-say "Wrote $out_edge (@{[ size( -s $out_edge ) ]})";
+    $fulledge{0} = \ %root;
+}
+
+%contained = ();
+untie %contained if tied %contained;
+%vertices = ();
+untie %vertices if tied %vertices;
+
+open $out{fulledge}{fh}, '>', $out{fulledge}{name}
+    or die "Can't open $out{fulledge}{name} for writing: $!";
+keys %fulledge;
+while ( defined ( my $x = each %fulledge ) ) {
+    my $yedge = $fulledge{$x};
+
+    keys %$yedge;
+    while ( defined( my $y = each %$yedge ) ) {
+        say { $out{fulledge}{fh} } "edge($x,$y).";
+    }
+    %$yedge = ();
+}
+%fulledge = ();
+untie %fulledge if tied %fulledge;
+say "Wrote $out{fulledge}{name} e(@{[ pretty_size( -s $out{fulledge}{name} ) ]})";
 
 sub is_self_loop_vertex {
     my ( $v ) = @_;
@@ -97,22 +188,14 @@ sub is_self_loop_vertex {
     my @todo = $v;
     while ( @todo ) {
         my $x = shift @todo;
-        my $children_h = $edge{$x};
-        next if ! $children_h;
+        my $yedge = $fulledge{$x};
 
-        my @children = keys %$children_h;
-        return 1 if grep { $v eq $_ } @children;
-        push @todo, @children;
+        keys %$yedge;
+        while ( defined( my $y = each %$yedge ) ) {
+            return 1 if $y eq $v;
+            push @todo, $y;
+        }
     }
 
     return 0;
-}
-
-sub read_db {
-    my ( $nm ) = @_;
-    open my($fh), '<', $nm
-	or die "Can't open $nm: $!";
-    
-    my $db;
-    
 }

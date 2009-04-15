@@ -3,24 +3,23 @@ use strict;
 use warnings;
 use 5.010_000;
 use feature ':5.10';
-use autodie qw( seek );
 use Getopt::Long qw( GetOptions );
 use Runops::Movie::Util qw( pretty_size );
 use File::Spec::Functions qw( catfile );
-use Judy 0.14;
 use Carp ();
-$SIG{__WARN__} = \&Carp::cluck;
-$| = 1;
+use Judy ();
 
-#$Devel::Trace::TRACE = 1;
-#Judy::trace(1);
+$Devel::Trace::TRACE = 0;
+Judy::trace( 0 );
+
+$SIG{__WARN__} = \&Carp::cluck;
+
 
 sub trace {
     if ( $Devel::Trace::TRACE ) {
         goto &Carp::cluck;
     }
 }
-*Judy::trace = *Judy::SL::trace = \ &trace;
 
 # Read options
 #
@@ -39,6 +38,10 @@ GetOptions(
     )
 )
   or die 'pod2usage( -verbose => 2 )';
+
+if ( $less_memory ) {
+    require Judy;
+}
 
 # --dir automagic
 #
@@ -68,8 +71,8 @@ if ($less_memory) {
     while (defined( my $_ = <$fh>)) {
         next if !( my ( $x, $y ) = /^contains\(([[:xdigit:]]+),([[:xdigit:]]+)\)\.$/ );
 
-        $vertices{hex "0x$x"} = 1;
-        $vertices{hex "0x$y"} = 1;
+        $vertices{hex "0x$x"} = $less_memory ? 1 : undef;
+        $vertices{hex "0x$y"} = $less_memory ? 1 : undef;
     }
 }
 
@@ -81,8 +84,11 @@ if ($less_memory) {
         or die "Can't read $in{shares}{name}: $!";
     while (defined( my $_ = <$fh>)) {
         next if !( my ( $x, $y ) = /^shares\(([[:xdigit:]]+),([[:xdigit:]]+)\)\.$/ );
-        $vertices{hex "0x$x"} = 1;
-        $vertices{hex "0x$y"} = 1;
+        $x = hex "0x$x";
+        $y = hex "0x$y";
+
+        $vertices{$x} = $less_memory ? 1 : undef;
+        $vertices{$y} = $less_memory ? 1 : undef;
     }
 }
 
@@ -98,8 +104,9 @@ if ($less_memory) {
         or die "Can't read $in{size}{name}: $!";
     while (defined(my $_ = <$fh>)) {
         next if !( my ( $x ) = /^size\(([[:xdigit:]]+)/ );
+        $x = hex "0x$x";
         
-        $vertices{ hex "0x$x" } = 1;
+        $vertices{$x} = $less_memory ? 1 : undef;
     }
 }
 
@@ -109,7 +116,7 @@ if ($less_memory) {
 #
 my( %fulledge, %contained );
 if ( $less_memory ) {
-    tie %fulledge, Judy => 'Judy::L->Judy::1';
+    tie %fulledge, Judy => 'L -> 1';
     tie %contained, 'Judy::1';
 }
 {
@@ -125,7 +132,7 @@ if ( $less_memory ) {
             $x = hex "0x$x";
             $y = hex "0x$y";
             
-            $fulledge{$x}{$y} = 1;
+            $fulledge{$x}{$y} = $less_memory ? 1 : undef;
             if ( is_self_loop_vertex( $y ) ) {
                 delete $fulledge{$x}{$y};
 
@@ -134,7 +141,7 @@ if ( $less_memory ) {
                 }
             }
             else {
-                $contained{$y} = 1;
+                $contained{$y} = $less_memory ? 1 : undef;
             }
         }
     }
@@ -154,7 +161,7 @@ if ( $less_memory ) {
         if ( $contained{ $x } ) {
         }
         else {
-            $root{$x} = 1;
+            $root{$x} = $less_memory ? 1 : undef;
         }
     }
 
@@ -166,21 +173,29 @@ untie %contained if tied %contained;
 %vertices = ();
 untie %vertices if tied %vertices;
 
-open $out{fulledge}{fh}, '>', $out{fulledge}{name}
-    or die "Can't open $out{fulledge}{name} for writing: $!";
-keys %fulledge;
-while ( defined ( my $x = each %fulledge ) ) {
-    my $yedge = $fulledge{$x};
+# $DB::signal = 1;
+# Judy::trace( 1 );
+# $Devel::Trace::TRACE = 1;
 
-    keys %$yedge;
-    while ( defined( my $y = each %$yedge ) ) {
-        say { $out{fulledge}{fh} } "edge($x,$y).";
+{
+    open my($fh), '>', $out{fulledge}{name}
+        or die "Can't open $out{fulledge}{name} for writing: $!";
+    keys %fulledge;
+    while ( defined ( my $x = each %fulledge ) ) {
+        my $yedge = $fulledge{$x};
+        my $xx = sprintf '%x', $x;
+        
+        keys %$yedge;
+        while ( defined( my $y = each %$yedge ) ) {
+            my $yx = sprintf '%x', $y;
+            say { $fh } "edge($xx,$yx).";
+        }
+        %$yedge = ();
     }
-    %$yedge = ();
+    %fulledge = ();
+    untie %fulledge if tied %fulledge;
+    say "Wrote $out{fulledge}{name} e(@{[ pretty_size( -s $out{fulledge}{name} ) ]})";
 }
-%fulledge = ();
-untie %fulledge if tied %fulledge;
-say "Wrote $out{fulledge}{name} e(@{[ pretty_size( -s $out{fulledge}{name} ) ]})";
 
 sub is_self_loop_vertex {
     my ( $v ) = @_;
