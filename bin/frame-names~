@@ -56,7 +56,7 @@ my %name = (
         or die "Can't open $out_name for writing: $!";
     keys %name;
     while (defined( my $x = each %name )) {
-        printf {$fh} "name(%x,'%s')\n", $x, $name{$x};
+        printf {$fh} "name(%x,'%s').\n", $x, $name{$x};
     }
     close $fh
         or die "Can't flush $out_name for writing: $!";

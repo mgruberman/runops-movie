@@ -3,24 +3,23 @@ use strict;
 use warnings;
 use 5.010_000;
 use feature ':5.10';
-use autodie qw( seek );
 use Getopt::Long qw( GetOptions );
 use Runops::Movie::Util qw( pretty_size );
 use File::Spec::Functions qw( catfile );
-use Judy 0.14;
 use Carp ();
-$SIG{__WARN__} = \&Carp::cluck;
-$| = 1;
+use Judy ();
 
-#$Devel::Trace::TRACE = 1;
-#Judy::trace(1);
+$Devel::Trace::TRACE = 0;
+Judy::trace( 0 );
+
+$SIG{__WARN__} = \&Carp::cluck;
+
 
 sub trace {
     if ( $Devel::Trace::TRACE ) {
         goto &Carp::cluck;
     }
 }
-*Judy::trace = *Judy::SL::trace = \ &trace;
 
 # Read options
 #
@@ -40,6 +39,10 @@ GetOptions(
 )
   or die 'pod2usage( -verbose => 2 )';
 
+if ( $less_memory ) {
+    require Judy;
+}
+
 # --dir automagic
 #
 if ( $dir ) {
@@ -51,26 +54,44 @@ if ( $dir ) {
 #
 trace( 'No option validation' );
 
-
+require Inline;
 
 # Add verticies
 #
-my %vertices;
-if ($less_memory) {
-    tie %vertices, 'Judy::1';
-}
+my $vertices;
 {
     say 'vertex(Id).';
 
     say "Read $in{contains}{name} (@{[ pretty_size( -s $in{contains}{name} ) ]})";
     open my($fh), '<', $in{contains}{name}
         or die "Can't read $in{contains}{name}: $!";
-    while (defined( my $_ = <$fh>)) {
-        next if !( my ( $x, $y ) = /^contains\(([[:xdigit:]]+),([[:xdigit:]]+)\)\.$/ );
 
-        $vertices{hex "0x$x"} = 1;
-        $vertices{hex "0x$y"} = 1;
+Inline->bind( C => <<"..." );
+#line @{[ __LINE__ ]}
+#include <Judy.h>
+
+void
+read_contains( PerlIO* fh, SV *vertices_sv ) {
+    SV line_sv;
+    char *line;
+    STRLEN line_len;
+    int x, y;
+    int Rc_int;
+
+    Pvoid_t vertices = SvIV( vertices_sv );
+    while (sv_gets( &line_sv, fh, 0 )) {
+        line = SvPV( &line_sv, line_len );
+        sscanf( line, "contains(%x,%x).", x, y );
+
+        PerlIO_printf(PerlIO_stdout(), "x=%x y=%x\\n", x, y );
+        J1S(Rc_int,vertices,x);
+        J1S(Rc_int,vertices,y);
     }
+    sv_setiv( vertices_sv, vertices );
+}
+...
+    $vertices += 0;
+    read_contains( $fh, $vertices );
 }
 
 
@@ -79,11 +100,24 @@ if ($less_memory) {
     say "Read $in{shares}{name} (@{[ pretty_size( -s $in{shares}{name} ) ]})";
     open my($fh), '<', $in{shares}{name}
         or die "Can't read $in{shares}{name}: $!";
-    while (defined( my $_ = <$fh>)) {
-        next if !( my ( $x, $y ) = /^shares\(([[:xdigit:]]+),([[:xdigit:]]+)\)\.$/ );
-        $vertices{hex "0x$x"} = 1;
-        $vertices{hex "0x$y"} = 1;
-    }
+#    eval_c(<<"...");
+#        #include <stdio.h>
+#
+#        Pvoid_t vertices = SvIV( (SV*)@{[ 0 + \$vertices ]} );
+#        IO *fh = sv_2io( (SV*)@{[ ]} );
+#        SV line_sv;
+#        char *line;
+#        int x, y;
+#        while (sv_gets( &line_sv, fh, 0 )) {
+#          line = SvPV( &line_sv );
+#          sscanf( SvPV( &line ), "shares(%x,%x).", x, y );
+#
+#          PerlIO_printf(PerlIO_stdout(), "x=%x y=%x\n", x, y );
+#          Judy::1::Set(vertices,x);
+#          Judy::1::Set(vertices,y);
+#        }
+#        sv_setiv( (SV*)@{[ 0+\$vertices ]}, vertices );
+#...
 }
 
 
@@ -99,7 +133,7 @@ if ($less_memory) {
     while (defined(my $_ = <$fh>)) {
         next if !( my ( $x ) = /^size\(([[:xdigit:]]+)/ );
         
-        $vertices{ hex "0x$x" } = 1;
+        Judy::1::Set($vertices, hex "0x$x");
     }
 }
 
@@ -107,10 +141,9 @@ if ($less_memory) {
 
 # Add edges, but only if they don't produce cycles
 #
-my( %fulledge, %contained );
+my( %fulledge, $contained );
 if ( $less_memory ) {
-    tie %fulledge, Judy => 'Judy::L->Judy::1';
-    tie %contained, 'Judy::1';
+    tie %fulledge, Judy => 'L -> 1';
 }
 {
     say 'edge(ParentId,ChildId).';
@@ -125,7 +158,7 @@ if ( $less_memory ) {
             $x = hex "0x$x";
             $y = hex "0x$y";
             
-            $fulledge{$x}{$y} = 1;
+            $fulledge{$x}{$y} = $less_memory ? 1 : undef;
             if ( is_self_loop_vertex( $y ) ) {
                 delete $fulledge{$x}{$y};
 
@@ -134,7 +167,7 @@ if ( $less_memory ) {
                 }
             }
             else {
-                $contained{$y} = 1;
+                Judy::1::Set($contained,$y);
             }
         }
     }
@@ -149,38 +182,46 @@ if ( $less_memory ) {
     if ( $less_memory ) {
         tie %root, 'Judy::1';
     }
-    keys %vertices;
-    while ( defined( my $x = each %vertices ) ) {
-        if ( $contained{ $x } ) {
+    my $x = Judy::1::First( $vertices, 0 );
+    while ( defined $x ) {
+        if ( Judy::1::Test( $contained, $x ) ) {
         }
         else {
-            $root{$x} = 1;
+            $root{$x} = $less_memory ? 1 : undef;
         }
+
+        $x = Judy::1::Next( $vertices, $x );
     }
 
     $fulledge{0} = \ %root;
 }
 
-%contained = ();
-untie %contained if tied %contained;
-%vertices = ();
-untie %vertices if tied %vertices;
+Judy::1::Free( $contained );
+Judy::1::Free( $vertices );
 
-open $out{fulledge}{fh}, '>', $out{fulledge}{name}
-    or die "Can't open $out{fulledge}{name} for writing: $!";
-keys %fulledge;
-while ( defined ( my $x = each %fulledge ) ) {
-    my $yedge = $fulledge{$x};
+# $DB::signal = 1;
+# Judy::trace( 1 );
+# $Devel::Trace::TRACE = 1;
 
-    keys %$yedge;
-    while ( defined( my $y = each %$yedge ) ) {
-        say { $out{fulledge}{fh} } "edge($x,$y).";
+{
+    open my($fh), '>', $out{fulledge}{name}
+        or die "Can't open $out{fulledge}{name} for writing: $!";
+    keys %fulledge;
+    while ( defined ( my $x = each %fulledge ) ) {
+        my $yedge = $fulledge{$x};
+        my $xx = sprintf '%x', $x;
+        
+        keys %$yedge;
+        while ( defined( my $y = each %$yedge ) ) {
+            my $yx = sprintf '%x', $y;
+            say { $fh } "edge($xx,$yx).";
+        }
+        %$yedge = ();
     }
-    %$yedge = ();
+    %fulledge = ();
+    untie %fulledge if tied %fulledge;
+    say "Wrote $out{fulledge}{name} e(@{[ pretty_size( -s $out{fulledge}{name} ) ]})";
 }
-%fulledge = ();
-untie %fulledge if tied %fulledge;
-say "Wrote $out{fulledge}{name} e(@{[ pretty_size( -s $out{fulledge}{name} ) ]})";
 
 sub is_self_loop_vertex {
     my ( $v ) = @_;

@@ -1,28 +1,31 @@
 #!/bin/bash
 set -e
 
+DIR=$1
+IN=$2
+OUT=$3
+
 function frame () {
     echo "frame-$*"
-    time eval "DYLD_INSERT_LIBRARIES=/usr/lib/libduma.dylib /opt/perl/bin/perl frame-$*"
+    time eval "/opt/perl/bin/perl frame-$*"
 }
 
-#frame read\
-#    --in ooo/perlcritic.log\
-#    --dir ooo
-#frame make-graph\
-#    --dir ooo\
-#    --less-mem
-#frame deparent\
-#    --dir ooo\
-#    --less-mem
-#frame sum-size\
-#    --dir ooo\
-#    --less-mem
-#frame names\
-#    --dir ooo\
-#    --less-mem
-frame png\
-    --dir ooo\
-    --png ooo/perlcritic.png\
+frame read\
+    --in $IN\
+    --dir $DIR
+find $DIR -ls
+frame make-graph\
+    --dir $DIR
+find $DIR -ls
+frame deparent\
+    --dir $DIR
+find $DIR -ls
+frame sum-size\
+    --dir $DIR
+frame names\
+    --dir $DIR\
     --less-mem
-open ooo/perlcritic.png
+frame png\
+    --dir $DIR\
+    --png $OUT
+#open $OUT

@@ -22,7 +22,7 @@ GetOptions(
     'in=s'            => \ my( $in_file ),
     'dir=s'           => \ my( $out_dir ),
     map {; "$_=s" => \ $out{$_}{name} }
-    qw( contains type file name stash size shares function ),
+    qw( contains type file name stash size shares function vertex ),
 )
   or die 'pod2usage( -verbose => 2 )';
 
@@ -69,6 +69,7 @@ while ( my $line = <$in>) {
         when ( /^SV = (\w+)\S+ at 0x([[:xdigit:]]+)/ ) {
             $type = "$1";
             $self = "$2";
+            vertex( $self );
             type( $self, $type );
         }
         when ( ! defined $type ) {
@@ -280,8 +281,9 @@ sub name;
 sub stash;
 sub size;
 sub shares;
+sub vertex;
 BEGIN {
-    for my $nm ( qw( function file name stash size shares ) ) {
+    for my $nm ( qw( function file name stash size shares vertex ) ) {
         no strict 'refs';
         *$nm = sub {
             use strict;

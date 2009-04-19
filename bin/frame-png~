@@ -8,8 +8,9 @@ use Runops::Movie::Util qw( pretty_size );
 use File::Spec::Functions qw( catfile );
 use Carp ();
 use Treemap::Output::Imager;
-use Treemap::Squarified;
+use Judy;
 
+$SIG{__WARN__} = sub { no warnings; Carp::cluck( @_ );  $DB::signal = 1; };
 $SIG{__DIE__} = \&Carp::confess;
 
 GetOptions(
@@ -18,7 +19,7 @@ GetOptions(
     'dir=s'      => \my($dir),
     'width=i'    => \my($width),
     'height=i'   => \my($height),
-    'size=s'     => \my($in_size),
+    'sum-size=s' => \my($in_sum_size),
     'edge=s'     => \my($in_edge),
     'type=s'     => \my($in_type),
     'name=s'     => \my($in_name),
@@ -30,14 +31,10 @@ GetOptions(
 $width //= 1024;
 $height //= 768;
 
-if ( $less_memory ) {
-    require Judy;
-}
-
 # --dir automagic
 #
 if ( $dir ) {
-    $in_size //= catfile( $dir, 'frame.size' );
+    $in_sum_size //= catfile( $dir, 'frame.sum-size' );
     $in_edge //= catfile( $dir, 'frame.edge' );
     $in_type //= catfile( $dir, 'frame.type' );
     $in_name //= catfile( $dir, 'frame.name' );
@@ -51,10 +48,10 @@ if ( ! -e $in_font ) {
     die "Missing $in_font";
 }
 
-say "Read $_ (@{[ pretty_size( -s $_ ) ]})" for $in_size, $in_edge, $in_type, $in_name;
+say "Read $_ (@{[ pretty_size( -s $_ ) ]})" for $in_sum_size, $in_edge, $in_type, $in_name;
 my $input = Treemap::Input::Edge->new;
 $input->load(
-    size => $in_size,
+    size => $in_sum_size,
     edge => $in_edge,
 	type => $in_type,
     names => $in_name,
@@ -71,6 +68,7 @@ my $treemap = Treemap::Squarified->new(
     OUTPUT => $output,
 );
 
+say 'Mapping';
 $treemap->map;
 
 $output->save( $out_png );
@@ -92,22 +90,22 @@ use constant TYPE   => 2;
 use constant NAMES  => 3;
 use constant NAME   => 4;
 use constant COLORS => {
-    null => 'grey',
-    pvgv => 'red',
-    pvav => 'green',
-    pvcv => 'cyan',
-    pvmg => 'golden',
-    pvio => 'golden',
+    NULL => 'grey',
+    PVGV => 'red',
+    PVAV => 'green',
+    PVCV => 'cyan',
+    PVMG => 'golden',
+    PVIO => 'golden',
     ''   => 'black',
-    pvbm => 'yellow',
-    nv   => 'yellow',
-    pvlv => 'yellow',
-    pv   => 'blue',
-    iv   => 'yellow',
-    rv   => 'orange',
-    pviv => 'yellow',
-    pvnv => 'yellow',
-    pvhv => 'brown',
+    PVBM => 'yellow',
+    NV   => 'yellow',
+    PVLV => 'yellow',
+    PV   => 'blue',
+    IV   => 'yellow',
+    RV   => 'orange',
+    PVIV => 'yellow',
+    PVNV => 'yellow',
+    PVHV => 'brown',
 };
 
 my %seen;
@@ -121,7 +119,7 @@ sub FETCH {
     given ( $key ) {
         when('colour') {
             my $name = $self->[NAME];
-            my $type = $self->[TYPE]{ $name };
+            my $type = $self->[TYPE]{ pack 'i', $name };
             if ( ! defined $type ) {
                 say "Missing type $name";
                 $type = '';
@@ -138,34 +136,41 @@ sub FETCH {
         }
         when ('children') {
             my $class    = ref $self;
-            my $outbound = $self->[EDGE]{$self->[NAME]};
-            return if ! $outbound;
+            my ( $pyedge, $yedge ) = Judy::L::Get($self->[EDGE],$self->[NAME]);
+            return if ! $pyedge;
 
-            my @children =
-                map {
-                    my $name = $_;
-                    my %child;
-                    tie %child, $class,
-                        $self->[SIZE],
-                        $self->[EDGE],
-                        $self->[TYPE],
-                        $self->[NAMES],
-                        $name;
+            my @children;
 
-                    \ %child;
-                }
-                grep { exists $self->[TYPE]{$_} }
-                    # grep { 0.000001 <= $self->[SIZE]{$_} / $self->[SIZE]{root} }
-                keys %$outbound;
+            my $y = Judy::1::First($yedge,0);
+            while ( defined $y ) {
+                my %child;
+                tie %child, $class,
+                    $self->[SIZE],
+                    $self->[EDGE],
+                    $self->[TYPE],
+                    $self->[NAMES],
+                    $y;
+
+                push @children, \ %child;
+
+                $y = Judy::1::Next($yedge,$y);
+            }
 
             return \ @children;
         }
         when ('name') {
-            return $self->[NAMES]{ $self->[NAME] } // '';
+            return $self->[NAMES]{ pack 'i', $self->[NAME] } // '';
             #return $self->[NAME];
         }
         when ('size') {
-            return $self->[SIZE]{$self->[NAME]};
+            if ( exists $self->[SIZE] ) {
+                my ( undef, $size ) = Judy::L::Get($self->[SIZE],$self->[NAME]);
+                return $size;
+            }
+            else {
+                warn "Missing size $self->[NAME]";
+                return 0;
+            }
         }
         default {
             die "@_";
@@ -182,25 +187,37 @@ BEGIN { our $VERSION = '0.01' }
 sub load {
     my ( $self, %path ) = @_;
 
-    my %size;
+    my $edge = 0;
     {
-        tie %size, 'Judy::L';
-        open my($fh), $path{size}
-            or die "Can't open $path{size}: $!";
-        while (my $line = <$fh>) {
-            my ($x,$s) = $line =~ /^\w+\(([[:xdigit:]]+),(\d+)\)\.$/;
-            $size{hex "0x$x"} = $s;
-        }
-    }
-
-    my %edge;
-    {
-        tie %edge, Judy => 'L -> 1';
         open my($fh), $path{edge}
             or die "Can't open $path{edge}: $!";
         while ( my $line = <$fh> ) {
-            my ($x,$y) = $line =~ /^\w+\(([[:xdigit:]]+),([[:xdigit:]]+)\)\.$/;
-            $edge{hex "0x$x"}{hex "0x$y"} = 1;
+            my ($x,$y) = $line =~ /^edge\(([[:xdigit:]]+),([[:xdigit:]]+)\)\.$/;
+            $x = hex "0x$x";
+            $y = hex "0x$y";
+            my ( $pyedge, $yedge ) = Judy::L::Get($edge,$x);
+            if ( $pyedge ) {
+                my $oyedge = $yedge;
+                Judy::1::Set($yedge,$y);
+                if ( $oyedge != $yedge ) {
+                    Judy::Mem::Poke($pyedge,$yedge);
+                }
+            }
+            else {
+                my $yedge = 0;
+                Judy::1::Set($yedge,$y);
+                Judy::L::Set($edge,$x,$yedge);
+            }
+        }
+    }
+
+    my $size = 0;
+    {
+        open my($fh), $path{size}
+            or die "Can't open $path{size}: $!";
+        while (my $line = <$fh>) {
+            my ($x,$s) = $line =~ /^size\(([[:xdigit:]]+),(\d+)\)\.$/;
+            Judy::L::Set($size, hex "0x$x", $s);
         }
     }
 
@@ -209,8 +226,8 @@ sub load {
         open my($fh), $path{type}
             or die "Can't open $path{type}: $!";
         while (my $line = <$fh>) {
-            my ($x,$t) = $line =~ /^\w+\(([[:xdigit:]]+),'?(.+)'?\)\.$/;
-            $type{hex "0x$x"} = $t;
+            my ($x,$t) = $line =~ /^type\(([[:xdigit:]]+),'?(.*?)'?\)\.$/;
+            $type{pack 'i', hex "0x$x"} = $t;
         }
     }
 
@@ -219,18 +236,19 @@ sub load {
         open my($fh), $path{names}
             or die "Can't open $path{names}: $!";
         while (my $line = <$fh>) {
-            my ($x,$n) = $line =~ /^\w+\(([[:xdigit:]]+),'?(.+)\)\.$/;
-            $names{hex "0x$x"} = $n;
+            my ($x,$n) = $line =~ /^name\(([[:xdigit:]]+),'(.*)'\)\.$/;
+            $names{pack 'i', hex "0x$x"} = $n;
         }
     }
 
     my %hash;
     tie %hash, Treemap::Input::Edge::Tie,
-        \ %size, \%edge, \%type, \%names,
-        '0';
+        $size, $edge, \%type, \%names,
+        0;
     $self->{DATA} = \ %hash;
 
     return 1;
 }
+use Treemap::Squarified;
 
 1;

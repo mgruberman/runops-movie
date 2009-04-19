@@ -58,6 +58,8 @@ for my $nm ( sort keys %out ) {
 }
 
 
+type( 0, '' );
+
 # Big damn readline loop
 #
 my $self;

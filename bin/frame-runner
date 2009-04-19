@@ -5,60 +5,66 @@ use feature ':5.10';
 use autodie 'system';
 use POSIX qw( ENOENT );
 
+my $dir = 'perlcritic';
+
 # Skip forward to the first frame.
 my $frame;
 while (my $_ = <STDIN>) {
-  if ( /^Runops::Movie frame (\d+)/ ) {
-    $frame = $1;
-    last;
-  }
+    if ( /^Runops::Movie frame (\d+)/ ) {
+        $frame = $1;
+        last;
+    }
 }
 
 FRAME:
 while (1) {
-  my $fn = 'frame.log';
-  open my($fh), '>', $fn
-    or die "Can't open $fn for writing: !";
-  
- LINE:
-  while ( 1 ) {
-    my $_ = <STDIN>;    
-    if ( ! defined ) {
-      print { $fh } $_
-        or die "Can't write to $fn: $!";
-      close $fh
-	or die "Can't close $fn: $!";
-      system 'treemap-arenalog', 'frame';
-      rename 'frame.png', sprintf 'frame-%04x.png', $frame
-	or die "Can't rename frame.png: $!";
-      undef $!;
-      unlink glob 'frame.*';
-      if ( $! && ENOENT != $! ) {
-	die "Can't unlink $fn: $!";
-      }
-      last FRAME;
+    my $fn = "$dir/frame.log";
+    open my($fh), '>', $fn
+        or die "Can't open $fn for writing: !";
+
+  LINE:
+    while ( 1 ) {
+        my $_ = <STDIN>;
+
+
+        # Last frame
+        #
+        if ( ! defined ) {
+            print { $fh } $_
+                or die "Can't write to $fn: $!";
+            close $fh
+                or die "Can't close $fn: $!";
+            system 'render-frame', $dir, $fn, sprintf 'frame-%04x.png', $frame;
+            undef $!;
+            unlink glob "$dir/frame.*";
+            if ( $! && ENOENT != $! ) {
+                die "Can't unlink $fn: $!";
+            }
+            last FRAME;
+        }
+
+
+        # Middle frames
+        #
+        elsif ( /^Runops::Movie frame (\d+)/ ) {
+
+            $frame = $1;
+            close $fh
+                or die "Can't close $fn: $!";
+            system 'render-frame', $dir, $fn, sprintf 'frame-%04x.png', $frame;
+            undef $!;
+            unlink glob "$dir/frame.*";
+            if ( $! && ENOENT != $! ) {
+                die "Can't unlink $fn: $!";
+            }
+            next FRAME;
+        }
+
+        # Inside a frame
+        else {
+            print { $fh } $_
+                or die "Can't write to $fn: $!";
+        }
     }
-    elsif ( /^Runops::Movie frame (\d+)/ ) {
-      $frame = $1;
-      close $fh
-	or die "Can't close $fn: $!";
-      system 'treemap-arenalog', 'frame';
-      rename 'frame.png', sprintf 'frame-%04x.png', $frame
-	or die "Can't rename frame.png: $!";
-      undef $!;
-      unlink glob 'frame.*';
-      if ( $! && ENOENT != $! ) {
-	die "Can't unlink $fn: $!";
-      }
-      next FRAME;
-    }
-    else {
-      print { $fh } $_
-        or die "Can't write to $fn: $!";
-    }
-  }
 }
 
-sub run {
-  system( 'treemap-arenalog', 'frame' );
-}

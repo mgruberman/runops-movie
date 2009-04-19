@@ -1,41 +1,98 @@
 #!/opt/perl/bin/perl
 use strict;
 use warnings;
+use 5.010_000;
 use feature ':5.10';
-use Storable qw( retrieve store );
-use File::Basename qw( dirname );
-use lib dirname(__FILE__);
-use TM qw( size );
+use Getopt::Long qw( GetOptions );
+use Runops::Movie::Util qw( pretty_size );
+use File::Spec::Functions qw( catfile );
+use Carp ();
 
-my $in_edge  = "$ARGV[0].fulledge";
-my $out_edge = "$ARGV[0].edge";
+$SIG{__DIE__} = \&Carp::confess;
 
-say "Read $in_edge (@{[ size( -s $in_edge ) ]})";
-my $edge = retrieve( $in_edge );
-my %new = ( 'root' => {} );
-my %seen;
+GetOptions(
+    help         => sub { die 'pod2usage( -verbose => 2 )' },
+    'less-mem'   => \my($less_memory),
+    'dir=s'      => \my($dir),
+    'fulledge=s' => \my($in_fulledge),
+    'edge=s'     => \my($out_edge),
+)
+  or die 'pod2usage( -verbose => 2 )';
 
-t( 'root' );
+if ( $less_memory ) {
+    require Judy;
+}
 
-store( \%new, $out_edge );
-say "Wrote $out_edge (@{[ size( -s $out_edge ) ]})";
+# --dir automagic
+#
+if ( $dir ) {
+    $in_fulledge //= catfile( $dir, 'frame.fulledge' );
+    $out_edge //= catfile( $dir, 'frame.edge' );
+}
+
+my %fulledge;
+{
+    say "Read $in_fulledge (@{[ pretty_size( -s $in_fulledge ) ]})";
+    if ( $less_memory ) {
+        tie %fulledge, Judy => 'L -> 1';
+    }
+    open my($fh), '<', $in_fulledge
+        or die "Can't read $in_fulledge: $!";
+
+    while (defined( my $_ = <$fh>)) {
+        next if !(my($x,$y) = /^edge\(([[:xdigit:]]+),([[:xdigit:]]+)\)\.$/);
+        $x = hex "0x$x";
+        $y = hex "0x$y";
+
+        $fulledge{$x}{$y} = $less_memory ? 1 : undef;
+    }
+}
+
+my ( %seen, %new );
+if ( $less_memory ) {
+    tie %seen, 'Judy::1';
+    tie %new, Judy => 'Judy::L->Judy::1'
+}
+
+t( 0 );
+
+{
+    open my($fh), '>', $out_edge
+        or die "Can't write to $out_edge: $!";
+    for my $x ( keys %new ) {
+        for my $y ( keys %{$new{$x}} ) {
+            say { $fh } sprintf 'edge(%x,%x).', $x, $y;
+        }
+        %{$new{$x}} = ();
+    }
+    %new = ();
+
+    say "Wrote $out_edge (@{[ pretty_size( -s $out_edge ) ]})";
+}
+
+use constant parent => 0;
 
 sub t {
-    my ( $parent ) =@_;
-
-    my $children = $edge->{$parent};
+    my $children = $fulledge{$_[parent]};
     return if ! $children;
 
-    my $new_children = $new{$parent} ||= {};
+    my $nnn = $new{$_[parent]} //= do {
+        my %n;
+        if ( $less_memory ) {
+            tie %n, 'Judy::1';
+        }
+        \ %n;
+    };
 
     for my $child ( keys %$children ) {
         if (exists $seen{$child}) {
-            say "Pruning $parent -> $child";
+            # say "Pruning $parent -> $child";
             next;
         }
-        $seen{$child} = undef;
 
-        $new_children->{$child} = undef;
+        $seen{$child} = $less_memory ? 1 : undef;
+        $nnn->{$child}  = $less_memory ? 1 : undef;
+
         t( $child );
     }
 }

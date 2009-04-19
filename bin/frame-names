@@ -32,33 +32,25 @@ if ( $dir ) {
     $out_name //= catfile( $dir, 'frame.name' );
 }
 
-my %edge;
-{
-    if ( $less_memory ) {
-        tie %edge, 'Judy', 'Judy::L -> Judy::1';
+say "Read $in_edge (@{[ pretty_size( -s $in_edge ) ]})";
+open my($ifh), '<', $in_edge
+    or die "Can't open $in_edge: $!";
+open my($ofh), '>', $out_name
+    or die "Can't open $out_name for writing: $!";
+my %seen;
+while (defined(my $_ = <$ifh>)) {
+    next if !(my($x,$y) = /^edge\(([[:xdigit:]]+),([[:xdigit:]]+)\)\.$/);
+    next if exists $seen{$x};
+    $seen{$x} = undef;
+
+    if ( $x ) {
+        say {$ofh} "name($x,'$x')."
+            or die "Can't write to $out_name: $!";
     }
-    say "Read $in_edge (@{[ pretty_size( -s $in_edge ) ]})";
-    open my($fh), '<', $in_edge
-        or die "Can't open $in_edge: $!";
-    while (defined(my $_ = <$fh>)) {
-        next if !(my($x,$y) = /^edge\(([[:xdigit:]]+),([[:xdigit:]]+)\)\.$/);
-        $edge{hex "0x$x"}{hex "0x$x"} = $less_memory ? 1 : undef;
+    else {
+        say {$ofh} "name(0,'').";
     }
 }
-
-my %name = (
-    map {; $_ => sprintf '%x', $_ }
-    keys %{ $edge{0} }
-);
-
-{
-    open my($fh), '>', $out_name
-        or die "Can't open $out_name for writing: $!";
-    keys %name;
-    while (defined( my $x = each %name )) {
-        printf {$fh} "name(%x,'%s').\n", $x, $name{$x};
-    }
-    close $fh
-        or die "Can't flush $out_name for writing: $!";
-    say "Wrote $out_name (@{[ pretty_size( -s $out_name ) ]})";
-}
+close $ofh
+    or die "Can't flush $out_name for writing: $!";
+say "Wrote $out_name (@{[ pretty_size( -s $out_name ) ]})";
