@@ -2,7 +2,16 @@ package Runops::Movie::Util;
 use strict;
 use warnings;
 use Exporter qw( import );
-our @EXPORT_OK = qw( pretty_size );
+our @EXPORT_OK = qw( pretty_size rood );
+
+sub rood {
+    my ( $fn ) = @_;
+
+    print "Read $fn (@{[ pretty_size( -s $fn ) ]})\n";
+    open my($fh), '<', $fn
+        or die "Can't open $fn for reading: $!";
+    return $fh;
+}
 
 use constant { GIGABYTE => 1<<30, MEGABYTE => 1<<20, KILIBYTE => 1<<10 };
 sub pretty_size {
