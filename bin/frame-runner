@@ -34,7 +34,7 @@ while (1) {
                 or die "Can't write to $fn: $!";
             close $fh
                 or die "Can't close $fn: $!";
-            system 'render-frame', $dir, $fn, sprintf 'frame-%04x.png', $frame;
+            system 'render-frame', $dir, $fn, sprintf 'frame-%05d.png', $frame;
             undef $!;
             unlink glob "$dir/frame.*";
             if ( $! && ENOENT != $! ) {
@@ -51,7 +51,7 @@ while (1) {
             $frame = $1;
             close $fh
                 or die "Can't close $fn: $!";
-            system 'render-frame', $dir, $fn, sprintf 'frame-%04x.png', $frame;
+            system 'render-frame', $dir, $fn, sprintf 'frame-%05d.png', $frame;
             undef $!;
             unlink glob "$dir/frame.*";
             if ( $! && ENOENT != $! ) {
