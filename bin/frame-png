@@ -236,7 +236,7 @@ sub load {
         open my($fh), $path{names}
             or die "Can't open $path{names}: $!";
         while (my $line = <$fh>) {
-            my ($x,$n) = $line =~ /^name\(([[:xdigit:]]+),'(.*)'\)\.$/;
+            my ($x,$n) = $line =~ /^name\(([[:xdigit:]]+),"(.*)"\)\.$/;
             $names{pack 'i', hex "0x$x"} = $n;
         }
     }
