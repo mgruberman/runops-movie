@@ -7,7 +7,7 @@ use Getopt::Long qw( GetOptions );
 use Runops::Movie::Util qw( pretty_size );
 use File::Spec::Functions qw( catfile );
 use Carp ();
-use Treemap::Output::Imager;
+use Runops::Movie::TM::Output::Imager;
 use Judy;
 
 $SIG{__WARN__} = sub { no warnings; Carp::cluck( @_ );  $DB::signal = 1; };
@@ -48,7 +48,7 @@ if ( ! -e $in_font ) {
 }
 
 say "Read $_ (@{[ pretty_size( -s $_ ) ]})" for $in_sum_size, $in_edge, $in_type, $in_name;
-my $input = Treemap::Input::Edge->new;
+my $input = Runops::Movie::TM::Input::Edge->new;
 $input->load(
     size => $in_sum_size,
     edge => $in_edge,
@@ -56,13 +56,13 @@ $input->load(
     names => $in_name,
 );
 
-my $output = Treemap::Output::Imager->new(
+my $output = Runops::Movie::TM::Output::Imager->new(
     WIDTH => $width,
     HEIGHT => $height,
     FONT_FILE => $in_font,
 );
 
-my $treemap = Treemap::Squarified->new(
+my $treemap = Runops::Movie::TM::Squarified->new(
     INPUT  => $input,
     OUTPUT => $output,
 );
