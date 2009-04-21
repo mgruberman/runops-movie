@@ -159,7 +159,7 @@ sub FETCH {
             return \ @children;
         }
         when ('name') {
-            return $self->[NAMES]{ pack 'i', $self->[NAME] } // '';
+            return $self->[NAMES]{ pack 'i', $self->[NAME] } // sprintf '%x', $self->[NAME];
             #return $self->[NAME];
         }
         when ('size') {
