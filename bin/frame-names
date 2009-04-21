@@ -4,7 +4,7 @@ use warnings;
 use 5.010_000;
 use feature ':5.10';
 use Getopt::Long qw( GetOptions );
-use Runops::Movie::Util qw( pretty_size );
+use Runops::Movie::Util qw( pretty_size  rood );
 use File::Spec::Functions qw( catfile );
 use Carp ();
 $SIG{__WARN__} = \&Carp::cluck;
