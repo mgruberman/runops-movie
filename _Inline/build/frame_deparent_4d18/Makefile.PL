@@ -1,0 +1,16 @@
+use ExtUtils::MakeMaker;
+my %options = %{       
+{
+  'TYPEMAPS' => [
+    '/opt/perl-5.10.0/lib/5.10.0/ExtUtils/typemap'
+  ],
+  'NAME' => 'frame_deparent_4d18',
+  'INC' => '-I/Users/jbenjore/src/runops-movie/bin',
+  'VERSION' => '0.00',
+  'OPTIMIZE' => ' -g'
+}
+};
+WriteMakefile(%options);
+
+# Remove the Makefile dependency. Causes problems on a few systems.
+sub MY::makefile { '' }

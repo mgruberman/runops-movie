@@ -1,11 +1,17 @@
-#!/opt/perl/bin/perl
+#!perl
 use strict;
 use warnings;
 use feature ':5.10';
 use autodie 'system';
+use Getopt::Long qw( GetOptions );
 use POSIX qw( ENOENT );
 
-my $dir = 'perlcritic';
+GetOptions(
+  help => sub { die },
+  'dir=s' => \my $dir
+)
+  or die "Invalid options?";
+$dir or die "Need a --dir";
 
 # Skip forward to the first frame.
 my $frame;
@@ -34,7 +40,10 @@ while (1) {
                 or die "Can't write to $fn: $!";
             close $fh
                 or die "Can't close $fn: $!";
-            system 'render-frame', $dir, $fn, sprintf 'frame-%05d.png', $frame;
+            system 'render-frame',
+                '--dir', $dir,
+                '--in', $fn,
+                '--png', sprintf 'frame-%05d.png', $frame;
             undef $!;
             unlink glob "$dir/frame.*";
             if ( $! && ENOENT != $! ) {
@@ -51,7 +60,10 @@ while (1) {
             $frame = $1;
             close $fh
                 or die "Can't close $fn: $!";
-            system 'render-frame', $dir, $fn, sprintf 'frame-%05d.png', $frame;
+            system 'render-frame',
+                '--dir', $dir,
+                '--in',$fn,
+                '--png', sprintf 'frame-%05d.png', $frame;
             undef $!;
             unlink glob "$dir/frame.*";
             if ( $! && ENOENT != $! ) {
@@ -68,3 +80,6 @@ while (1) {
     }
 }
 
+chdir $dir
+  or die "Can't chdir to $dir: $!";
+system 'frames2mp4';

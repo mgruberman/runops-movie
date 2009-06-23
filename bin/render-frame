@@ -1,20 +1,21 @@
-#!/bin/bash
-set -e
+#!perl
+use strict;
+use warnings;
+use Getopt::Long qw( GetOptions );
+use autodie qw( system );
 
-DIR=$1
-IN=$2
-OUT=$3
+GetOptions(
+  help    => sub { die },
+  'dir=s' => \ my $dir,
+  'in=s'  => \ my $in,
+  'png=s' => \ my $png
+)
+  or die "@ARGV";
 
-function frame () {
-    echo "frame-$*"
-    time eval "/opt/perl/bin/perl frame-$*"
-}
-
-frame read       --dir $DIR --in $IN
-frame make-graph --dir $DIR
-frame deparent   --dir $DIR
-frame redge      --dir $DIR
-frame sum-size   --dir $DIR
-frame names      --dir $DIR
-frame png        --dir $DIR --png $OUT
-#open $OUT
+system 'frame-read',       '--dir', $dir, '--in', $in;
+system 'frame-make-graph', '--dir', $dir;
+system 'frame-deparent',   '--dir', $dir;
+system 'frame-redge',      '--dir', $dir;
+system 'frame-sum-size',   '--dir', $dir;
+system 'frame-names',      '--dir', $dir;
+system 'frame-png',        '--dir', $dir, '--png', $png;
