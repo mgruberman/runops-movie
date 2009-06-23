@@ -7,7 +7,8 @@ our @EXPORT_OK = qw( pretty_size rood );
 sub rood {
     my ( $fn ) = @_;
 
-    print "Read $fn (@{[ pretty_size( -s $fn ) ]})\n";
+    print "Read $fn (@{[ pretty_size( -s $fn ) ]})\n"
+        or warn "Can't write to STDOUT: $!";
     open my($fh), '<', $fn
         or die "Can't open $fn for reading: $!";
     return $fh;
@@ -31,5 +32,4 @@ sub pretty_size {
     }
 }
 
-
-1;
+'Go drinking with mst';

@@ -1,0 +1,20 @@
+#!perl
+use strict;
+use warnings;
+use autodie qw( chdir system );
+use Getopt::Long qw( GetOptions );
+
+GetOptions(
+  help => sub { die },
+  'frames=s' => \my$frames,
+  'movie=s'  => \my$movie,
+)
+  or die;
+
+system qw(
+  ffmpeg
+  -qscale 5
+  -r 20
+  -b 9600
+  -i), $frames,
+  $movie;
