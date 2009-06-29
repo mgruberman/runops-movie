@@ -38,8 +38,6 @@ while (1) {
         # Last frame
         #
         if ( ! defined ) {
-            print { $fh } $_
-                or die "Can't write to $fn: $!";
             close $fh
                 or die "Can't close $fn: $!";
             system 'pm-frame-render',
