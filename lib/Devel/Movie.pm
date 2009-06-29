@@ -1,20 +1,20 @@
 package Devel::Movie;
 package DB;
-use strict;
-use feature ':5.10';
 use Internals::DumpArenas ();
+our $Frame;
 sub tracer {
-    state $Frame = 0;
+    $Frame //= 0;
+
     local $, = ' ';
-    print STDERR 'Runops::Movie frame ', ++$Frame, @_
+    ++$Frame;
+    print STDOUT 'Runops::Movie frame',$Frame, @_;
+    print STDERR 'Runops::Movie frame',$Frame, @_
         or warn "Can't write to STDERR: $!";
     Internals::DumpArenas::DumpArenas();
 }
-
-sub DB {}
+sub DB { tracer }
 sub sub {
-    no strict;
-    tracer $sub;
+    tracer( $sub );
     goto &$sub;
 }
 

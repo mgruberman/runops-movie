@@ -43,3 +43,4 @@ scripts/pm-frame-sum-size
 scripts/pm-frames-mp4
 scripts/pm-stream
 t/10basic.t
+t/11movie.t
