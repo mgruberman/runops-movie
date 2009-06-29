@@ -28,8 +28,8 @@ say "Working in $dir";
 # Capture the raw data
 run(
   [ $^X, '-d:Movie', @ARGV ],
-  '1>', $log,
-  '2>&1'
+  '2>', $log,
+  '1>&2'
 );
 
 
