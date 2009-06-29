@@ -13,6 +13,7 @@ GetOptions(
 
 system qw(
   ffmpeg
+  -y
   -qscale 5
   -r 20
   -b 9600
