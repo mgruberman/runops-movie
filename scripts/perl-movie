@@ -27,7 +27,7 @@ say "Working in $dir";
 
 # Capture the raw data
 run(
-  [ $^X, '-MRunops::Movie', @ARGV ],
+  [ $^X, '-d:Movie', @ARGV ],
   '1>', $log,
   '2>&1'
 );

@@ -24,6 +24,7 @@ bin/xml2png
 Build.PL
 Changes
 fonts/ImUgly.ttf
+lib/Devel/Movie.pm
 lib/Runops/Movie.pm
 lib/Runops/Movie/TM.pm
 lib/Runops/Movie/TM/Input.pm
