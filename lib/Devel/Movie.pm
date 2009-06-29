@@ -11,7 +11,7 @@ sub tracer {
     Internals::DumpArenas::DumpArenas();
 }
 
-sub DB { tracer }
+sub DB {}
 sub sub {
     no strict;
     tracer $sub;
