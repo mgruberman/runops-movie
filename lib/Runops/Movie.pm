@@ -1,6 +1,7 @@
 package Runops::Movie;
 use strict;
 use warnings;
+use feature ':5.10';
 
 use Runops::Trace ();
 use Internals::DumpArenas ();
@@ -11,7 +12,7 @@ our $Frame;
 sub tracer {
     $Frame = 1 if ! defined $Frame;
 
-    print { *STDERR } "Runops::Movie frame $Frame\n"
+    say { *STDERR } "Runops::Movie frame $Frame " . $_[0]->name
         or warn "Can't write to STDERR: $!";
     ++ $Frame;
     Internals::DumpArenas::DumpArenas();
