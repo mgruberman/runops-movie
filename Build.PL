@@ -6,6 +6,7 @@ use Module::Build 0.26;
 
 my $build = Module::Build->new(
     module_name => 'Runops::Movie',
+    dist_abstract => 'Make movies of perl guts',
     license  => 'perl',
     configure_requires => {
         'Module::Build' => '0.26',
