@@ -17,6 +17,7 @@ my $build = Module::Build->new(
         'Runops::Trace'         => 0,
         'Internals::DumpArenas' => '0.08',
         'autodie'               => 0,
+        'IPC::Run'              => 0,
         'IPC::System::Simple'   => 0,
         'Judy'                  => '0.13',
         'Inline::C'             => 0,
