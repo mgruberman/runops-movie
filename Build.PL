@@ -28,7 +28,7 @@ my $build = Module::Build->new(
         # Inline::C so I want to ensure that Judy.h is specifically available.
         'Alien::Judy'           => 0,
 
-        # Also depend on bunzip2, ffmpeg, and whatever ffmpeg wants
+        # Also depend on ffmpeg, and whatever ffmpeg wants
     },
     script_files => [
         # Captures a frame stream from a program and renders it to movie

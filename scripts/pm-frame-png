@@ -6,14 +6,10 @@ use feature ':5.10';
 use Getopt::Long qw( GetOptions );
 use Runops::Movie::Util qw( pretty_size );
 use File::Spec::Functions qw( catfile );
-use Carp ();
+use Carp::Always;
 use Runops::Movie::TM::Input::Edge;
 use Runops::Movie::TM::Output::Imager;
 use Runops::Movie::TM::Squarified;
-use Judy;
-
-$SIG{__WARN__} = sub { no warnings; Carp::cluck( @_ );  $DB::signal = 1; };
-$SIG{__DIE__} = \&Carp::confess;
 
 GetOptions(
     help         => sub { die 'pod2usage( -verbose => 2 )' },

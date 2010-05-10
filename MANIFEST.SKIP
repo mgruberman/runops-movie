@@ -50,3 +50,4 @@
 \B\._
 # Avoid archives of this distribution
 \bRunops-Movie-[\d\.\_]+
+^MYMETA.yml$

@@ -6,12 +6,8 @@ use feature ':5.10';
 use Getopt::Long qw( GetOptions );
 use Runops::Movie::Util qw( pretty_size );
 use File::Spec::Functions qw( catfile );
-use Carp ();
-use Judy ();
-use Inline C => Config => OPTIMIZE => '-g', CLEAN_AFTER_BUILD => 0;
-$| = 1;
-
-$SIG{__DIE__} = \&Carp::confess;
+use Carp::Always;
+use Alien::Judy;
 
 GetOptions(
     help      => sub { die 'pod2usage( -verbose => 2 )' },
@@ -29,9 +25,34 @@ if ( $dir ) {
     $out_redge //= catfile( $dir, 'frame.redge' );
 }
 
-use Inline C => <<"...";
-#line @{[ 2 + __LINE__ ]}
+open my($ifh), '<', $in_edge
+    or die "Can't open $in_edge: $!";
+open my($ofh), '>', $out_redge
+    or die "Can't open $out_redge: $!";
+
+my $redge = read_edge_as_redge($ifh);
+write_redge($redge,$ofh);
+free_redge($redge);
+
+use Inline
+    C => <<'__END_Inline::C__',
+    Config => (
+        OPTIMIZE => '-g',
+        CLEAN_AFTER_BUILD => 1,
+        INC => join( ' ',
+            map { "-I$_" }
+            Alien::Judy::inc_dirs()
+        ),
+        LIBS => join( ' ',
+            (
+                map { "-L$_" }
+                Alien::Judy::lib_dirs()
+            ),
+            '-lJudy'
+        )
+    );
 #include <Judy.h>
+
 void*
 read_edge_as_redge(PerlIO *fh) {
     SV *line_sv;
@@ -91,14 +112,5 @@ free_redge(void *redge) {
     }
     JLFA(freed,redge);
 }
+__END_Inline::C__
 
-...
-
-open my($ifh), '<', $in_edge
-    or die "Can't open $in_edge: $!";
-open my($ofh), '>', $out_redge
-    or die "Can't open $out_redge: $!";
-
-my $redge = read_edge_as_redge($ifh);
-write_redge($redge,$ofh);
-free_redge($redge);

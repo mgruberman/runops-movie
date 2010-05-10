@@ -6,9 +6,11 @@ use feature ':5.10';
 use Getopt::Long qw( GetOptions );
 use Runops::Movie::Util qw( pretty_size  rood );
 use File::Spec::Functions qw( catfile );
-use Carp ();
-use Judy;
-$SIG{__WARN__} = \&Carp::cluck;
+use Carp::AlwayS;
+use Alien::Judy;
+use Inline ();
+use Judy::Mem;
+use Judy::L;
 
 # Read options
 #
@@ -42,9 +44,59 @@ open my($in_vertices_fh), '<', $in_vertices
 open my($ofh), '>', $out_name
     or die "Can't open $out_name for writing: $!";
 
-use Inline C => qw( Config LIBS -lJudy OPTIMIZE -g );
-use Inline C => <<"...";
-#line @{[ 2 + __LINE__ ]} "@{[ __FILE__ ]}"
+sub read_names {
+    my $ifh = $_[2];
+    
+    my %names;
+    $_[1] = 0;
+    while (my $line = <$ifh>) {
+        my ( $x, $nm ) = $line =~ /^\w+\(([[:xdigit:]]+),(.*)\)\.$/
+            or die $line;
+
+        if ( $nm =~ s/^'// ) {
+            $nm =~ s/'$//;
+        }
+        $nm =~ s/\\(.)/$1/g;
+        $nm =~ s/([^`~!\@#\$%^&*()\-_=+\[{\]|;:'",<.>\/?\w]+)/sprintf "\\x%02x", ord $1/ge;
+        
+        my $num;
+        if ( exists $names{$nm} ) {
+            $num = $names{$nm};
+        }
+        else {
+            $num = 1 + keys %names;
+            $names{$nm} = $num;
+        }
+        
+        Judy::L::Set($_[1],hex "0x$x",$num);
+    }
+
+    # Copy the #->name table out
+    $_[0] = 0;
+    for ( sort { $names{$a} <=> $names{$b} } keys %names ) {
+        my $ptr = Judy::Mem::String2Ptr( pack 'i/a*', $_ );
+        Judy::L::Set($_[0],$names{$_},$ptr);
+    }
+}
+
+
+my $redgedb  = read_edge_as_redge( rood($in_edge)     );
+my $vertexdb = read_vertices(      rood($in_vertices) );
+read_names(  my($stash_numbering),    my($stashdb),    rood($in_stash) );
+read_names(  my($function_numbering), my($functiondb), rood($in_function) );
+resolve_names(
+    $redgedb,
+    $vertexdb,
+    $stash_numbering    => $stashdb,
+    $function_numbering => $functiondb,
+    $ofh );
+
+close $ofh
+    or die "Can't flush $out_name for writing: $!";
+say "Wrote $out_name (@{[ pretty_size( -s $out_name ) ]})";
+
+BEGIN {
+    my $c_src = <<'__END_Inline::C__';
 #include <Judy.h>
 
 #if 0
@@ -198,7 +250,7 @@ resolve_name( void *redgedb, void *vertexdb, void *stashtbl, void *stashdb, void
     MyJ1FA( trash, seen_parent );
     MyJ1FA( trash, todo_parent );
 
-    return 0;
+    return NULL;
 }
 
 void
@@ -223,56 +275,24 @@ resolve_names( void *redgedb, void *vertexdb, void *stashtbl, void *stashdb, voi
         MyJ1N( read_a_vertex, vertexdb, vertex );
     }
 }
+__END_Inline::C__
 
-...
-
-sub read_names {
-    my $ifh = $_[2];
-    
-    my %names;
-    $_[1] = 0;
-    while (my $line = <$ifh>) {
-        my ( $x, $nm ) = $line =~ /^\w+\(([[:xdigit:]]+),(.*)\)\.$/
-            or die $line;
-
-        if ( $nm =~ s/^'// ) {
-            $nm =~ s/'$//;
-        }
-        $nm =~ s/\\(.)/$1/g;
-        $nm =~ s/([^`~!\@#\$%^&*()\-_=+\[{\]|;:'",<.>\/?\w]+)/sprintf "\\x%02x", ord $1/ge;
-        
-        my $num;
-        if ( exists $names{$nm} ) {
-            $num = $names{$nm};
-        }
-        else {
-            $num = 1 + keys %names;
-            $names{$nm} = $num;
-        }
-        
-        Judy::L::Set($_[1],hex "0x$x",$num);
-    }
-
-    # Copy the #->name table out
-    $_[0] = 0;
-    for ( sort { $names{$a} <=> $names{$b} } keys %names ) {
-        my $ptr = Judy::Mem::String2Ptr( pack 'i/a*', $_ );
-        Judy::L::Set($_[0],$names{$_},$ptr);
-    }
+    Inline->import
+        C => $c_src,
+        Config => (
+            OPTIMIZE => '-g',
+            CLEAN_AFTER_BUILD => 1,
+            INC => join( ' ',
+                map { "-I$_" }
+                Alien::Judy::inc_dirs()
+            ),
+            LIBS => join( ' ',
+                (
+                    map { "-L$_" }
+                    Alien::Judy::lib_dirs()
+                ),
+                '-lJudy'
+            ),
+        )
+    );
 }
-
-
-my $redgedb  = read_edge_as_redge( rood($in_edge)     );
-my $vertexdb = read_vertices(      rood($in_vertices) );
-read_names(  my($stash_numbering),    my($stashdb),    rood($in_stash) );
-read_names(  my($function_numbering), my($functiondb), rood($in_function) );
-resolve_names(
-    $redgedb,
-    $vertexdb,
-    $stash_numbering    => $stashdb,
-    $function_numbering => $functiondb,
-    $ofh );
-
-close $ofh
-    or die "Can't flush $out_name for writing: $!";
-say "Wrote $out_name (@{[ pretty_size( -s $out_name ) ]})";

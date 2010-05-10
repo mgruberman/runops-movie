@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use autodie qw( chdir system );
 use Getopt::Long qw( GetOptions );
+use Carp::Always;
 
 GetOptions(
   help => sub { die },
