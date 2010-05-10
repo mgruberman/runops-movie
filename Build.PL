@@ -14,6 +14,8 @@ my $build = Module::Build->new(
     requires => {
         perl                    => '5.10.0',
 
+        'ExtUtils::CBuilder'    => 0,
+
         'Runops::Trace'         => 0,
         'Internals::DumpArenas' => '0.08',
         'autodie'               => 0,
