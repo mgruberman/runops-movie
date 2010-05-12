@@ -9,6 +9,23 @@ use File::Spec::Functions qw( catfile );
 use Carp::Always;
 use Alien::Judy;
 use Judy::L;
+use Inline
+    C => 'DATA',
+    ( # Config:
+        OPTIMIZE => '-g',
+        CLEAN_AFTER_BUILD => 1,
+        INC => join( ' ',
+            map { "-I$_" }
+            Alien::Judy::inc_dirs()
+        ),
+        LIBS => join( ' ',
+            (
+                map { "-L$_" }
+                Alien::Judy::lib_dirs()
+            ),
+            '-lJudy'
+        )
+    );
 
 
 
@@ -62,23 +79,8 @@ close $fh
     or die "Can't flush $out_size: $!";
 say "Wrote $out_size (@{[ pretty_size( -s $out_size ) ]})";
 
-use Inline
-    C => <<'__END_Inline::C__',
-    Config => (
-        OPTIMIZE => '-g',
-        CLEAN_AFTER_BUILD => 1,
-        INC => join( ' ',
-            map { "-I$_" }
-            Alien::Judy::inc_dirs()
-        ),
-        LIBS => join( ' ',
-            (
-                map { "-L$_" }
-                Alien::Judy::lib_dirs()
-            ),
-            '-lJudy'
-        )
-    );
+__DATA__
+__C__
 #include <Judy.h>
 
 void*
@@ -184,5 +186,3 @@ calc_sum( void* vertex_size, void* edge, int x ) {
     _sum( vertex_size, edge, x, sums );
     return *sums;
 }
-
-__END_Inline::C__

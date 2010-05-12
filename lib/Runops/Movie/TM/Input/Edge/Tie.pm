@@ -13,8 +13,8 @@ use constant COLORS => {
     PVAV => 'green',
     PVFM => 'cyan',
     PVCV => 'cyan',
-    PVMG => 'golden',
-    PVIO => 'golden',
+    PVMG => 'goldenrod1',
+    PVIO => 'goldenrod1',
     ''   => 'black',
     PVBM => 'yellow',
     NV   => 'yellow',
@@ -26,6 +26,8 @@ use constant COLORS => {
     PVNV => 'yellow',
     PVHV => 'brown',
 };
+use Judy::1;
+use Judy::L;
 
 my %seen;
 sub TIEHASH {

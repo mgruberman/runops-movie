@@ -6,12 +6,28 @@ use feature ':5.10';
 use Getopt::Long qw( GetOptions );
 use Runops::Movie::Util qw( pretty_size  rood );
 use File::Spec::Functions qw( catfile );
-use Carp::AlwayS;
+use Carp::Always;
 use Alien::Judy;
-use Inline ();
 use Judy::Mem;
 use Judy::L;
-
+use Inline
+    C => 'DATA',
+    ( # Config:
+	OPTIMIZE => '-g',
+	CLEAN_AFTER_BUILD => 1,
+	INC => join( ' ',
+		     map { "-I$_" }
+		     Alien::Judy::inc_dirs()
+	),
+	LIBS => join( ' ',
+		      (
+		          map { "-L$_" }
+		          Alien::Judy::lib_dirs()
+		      ),
+		      '-lJudy'
+	),
+    );
+    
 # Read options
 #
 my ( %in, %out );
@@ -95,50 +111,50 @@ close $ofh
     or die "Can't flush $out_name for writing: $!";
 say "Wrote $out_name (@{[ pretty_size( -s $out_name ) ]})";
 
-BEGIN {
-    my $c_src = <<'__END_Inline::C__';
+__DATA__
+__C__
 #include <Judy.h>
 
 #if 0
-#define MyJLG(a,b,c) do {\\
-    PerlIO_printf(PerlIO_stdout(),"%s:%d JLG(0x%x,0x%x,0x%x)\\n",__FILE__,__LINE__,a,b,c);\\
-    JLG(a,b,c);\\
-    PerlIO_printf(PerlIO_stdout(),"%s:%d JLG(0x%x,0x%x,0x%x)\\n",__FILE__,__LINE__,a,b,c);\\
+#define MyJLG(a,b,c) do {\
+    PerlIO_printf(PerlIO_stdout(),"%s:%d JLG(0x%x,0x%x,0x%x)\n",__FILE__,__LINE__,a,b,c);\
+    JLG(a,b,c);\
+    PerlIO_printf(PerlIO_stdout(),"%s:%d JLG(0x%x,0x%x,0x%x)\n",__FILE__,__LINE__,a,b,c);\
   } while (0);
-#define MyJLI(a,b,c) do {\\
-    PerlIO_printf(PerlIO_stdout(),"%s:%d JLI(0x%x,0x%x,0x%x)\\n",__FILE__,__LINE__,a,b,c);\\
-    JLI(a,b,c);\\
-    PerlIO_printf(PerlIO_stdout(),"%s:%d JLI(0x%x,0x%x,0x%x)\\n",__FILE__,__LINE__,a,b,c);\\
+#define MyJLI(a,b,c) do {\
+    PerlIO_printf(PerlIO_stdout(),"%s:%d JLI(0x%x,0x%x,0x%x)\n",__FILE__,__LINE__,a,b,c);\
+    JLI(a,b,c);\
+    PerlIO_printf(PerlIO_stdout(),"%s:%d JLI(0x%x,0x%x,0x%x)\n",__FILE__,__LINE__,a,b,c);\
   } while (0);
-#define MyJ1S(a,b,c) do {\\
-    PerlIO_printf(PerlIO_stdout(),"%s:%d J1S(%d,0x%x,0x%x)\\n",__FILE__,__LINE__,a,b,c);\\
-    J1S(a,b,c);\\
-    PerlIO_printf(PerlIO_stdout(),"%s:%d J1S(%d,0x%x,0x%x)\\n",__FILE__,__LINE__,a,b,c);\\
+#define MyJ1S(a,b,c) do {\
+    PerlIO_printf(PerlIO_stdout(),"%s:%d J1S(%d,0x%x,0x%x)\n",__FILE__,__LINE__,a,b,c);\
+    J1S(a,b,c);\
+    PerlIO_printf(PerlIO_stdout(),"%s:%d J1S(%d,0x%x,0x%x)\n",__FILE__,__LINE__,a,b,c);\
   } while (0);
-#define MyJ1U(a,b,c) do {\\
-    PerlIO_printf(PerlIO_stdout(),"%s:%d J1U(%d,0x%x,0x%x)\\n",__FILE__,__LINE__,a,b,c);\\
-    J1U(a,b,c);\\
-    PerlIO_printf(PerlIO_stdout(),"%s:%d J1U(%d,0x%x,0x%x)\\n",__FILE__,__LINE__,a,b,c);\\
+#define MyJ1U(a,b,c) do {\
+    PerlIO_printf(PerlIO_stdout(),"%s:%d J1U(%d,0x%x,0x%x)\n",__FILE__,__LINE__,a,b,c);\
+    J1U(a,b,c);\
+    PerlIO_printf(PerlIO_stdout(),"%s:%d J1U(%d,0x%x,0x%x)\n",__FILE__,__LINE__,a,b,c);\
   } while (0);
-#define MyJ1F(a,b,c) do {\\
-    PerlIO_printf(PerlIO_stdout(),"%s:%d J1F(%d,0x%x,0x%x)\\n",__FILE__,__LINE__,a,b,c);\\
-    J1F(a,b,c);\\
-    PerlIO_printf(PerlIO_stdout(),"%s:%d J1F(%d,0x%x,0x%x)\\n",__FILE__,__LINE__,a,b,c);\\
+#define MyJ1F(a,b,c) do {\
+    PerlIO_printf(PerlIO_stdout(),"%s:%d J1F(%d,0x%x,0x%x)\n",__FILE__,__LINE__,a,b,c);\
+    J1F(a,b,c);\
+    PerlIO_printf(PerlIO_stdout(),"%s:%d J1F(%d,0x%x,0x%x)\n",__FILE__,__LINE__,a,b,c);\
   } while (0);
-#define MyJ1N(a,b,c) do {\\
-    PerlIO_printf(PerlIO_stdout(),"%s:%d J1N(%d,0x%x,0x%x)\\n",__FILE__,__LINE__,a,b,c);\\
-    J1N(a,b,c);\\
-    PerlIO_printf(PerlIO_stdout(),"%s:%d J1N(%d,0x%x,0x%x)\\n",__FILE__,__LINE__,a,b,c);\\
+#define MyJ1N(a,b,c) do {\
+    PerlIO_printf(PerlIO_stdout(),"%s:%d J1N(%d,0x%x,0x%x)\n",__FILE__,__LINE__,a,b,c);\
+    J1N(a,b,c);\
+    PerlIO_printf(PerlIO_stdout(),"%s:%d J1N(%d,0x%x,0x%x)\n",__FILE__,__LINE__,a,b,c);\
   } while (0);
-#define MyJ1T(a,b,c) do {\\
-    PerlIO_printf(PerlIO_stdout(),"%s:%d J1T(%d,0x%x,0x%x)\\n",__FILE__,__LINE__,a,b,c);\\
-    J1T(a,b,c);\\
-    PerlIO_printf(PerlIO_stdout(),"%s:%d J1T(%d,0x%x,0x%x)\\n",__FILE__,__LINE__,a,b,c);\\
+#define MyJ1T(a,b,c) do {\
+    PerlIO_printf(PerlIO_stdout(),"%s:%d J1T(%d,0x%x,0x%x)\n",__FILE__,__LINE__,a,b,c);\
+    J1T(a,b,c);\
+    PerlIO_printf(PerlIO_stdout(),"%s:%d J1T(%d,0x%x,0x%x)\n",__FILE__,__LINE__,a,b,c);\
   } while (0);
-#define MyJ1FA(a,b) do {\\
-    PerlIO_printf(PerlIO_stdout(),"%s:%d J1FA(%d,0x%x)\\n",__FILE__,__LINE__,a,b);\\
-    J1FA(a,b);\\
-    PerlIO_printf(PerlIO_stdout(),"%s:%d J1FA(%d,0x%x)\\n",__FILE__,__LINE__,a,b);\\
+#define MyJ1FA(a,b) do {\
+    PerlIO_printf(PerlIO_stdout(),"%s:%d J1FA(%d,0x%x)\n",__FILE__,__LINE__,a,b);\
+    J1FA(a,b);\
+    PerlIO_printf(PerlIO_stdout(),"%s:%d J1FA(%d,0x%x)\n",__FILE__,__LINE__,a,b);\
   } while (0);
 #else
 #define MyJLI(a,b,c) JLI(a,b,c)
@@ -266,33 +282,12 @@ resolve_names( void *redgedb, void *vertexdb, void *stashtbl, void *stashdb, voi
     while ( read_a_vertex ) {
         name = resolve_name( redgedb, vertexdb, stashtbl, stashdb, functiontbl, functiondb, vertex );
         if ( name ) {
-            PerlIO_printf(fh,"name(%x,\\"",vertex);
+            PerlIO_printf(fh,"name(%x,\"",vertex);
             PerlIO_write(fh,name+sizeof(int),*name);
-            PerlIO_puts(fh,"\\").\\n");
+            PerlIO_puts(fh,"\").\n");
         }
 
         /* Continue looking for another vertex */
         MyJ1N( read_a_vertex, vertexdb, vertex );
     }
-}
-__END_Inline::C__
-
-    Inline->import
-        C => $c_src,
-        Config => (
-            OPTIMIZE => '-g',
-            CLEAN_AFTER_BUILD => 1,
-            INC => join( ' ',
-                map { "-I$_" }
-                Alien::Judy::inc_dirs()
-            ),
-            LIBS => join( ' ',
-                (
-                    map { "-L$_" }
-                    Alien::Judy::lib_dirs()
-                ),
-                '-lJudy'
-            ),
-        )
-    );
 }

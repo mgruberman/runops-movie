@@ -10,6 +10,24 @@ use Carp::Always;
 use Alien::Judy;
 use Judy::1;
 use Judy::L;
+use Inline
+    C => 'DATA',
+    ( # Config:
+	OPTIMIZE => '-g',
+	CLEAN_AFTER_BUILD => 1,
+	INC => join( ' ',
+		     map { "-I$_" }
+		     Alien::Judy::inc_dirs()
+	),
+	LIBS => join( ' ',
+		      (
+		          map { "-L$_" }
+		          Alien::Judy::lib_dirs()
+		      ),
+		      '-lJudy'
+	)
+    );
+
 
 # Read options
 #
@@ -45,7 +63,7 @@ my $vertices = 0;
 {
     say 'vertex(Id).';
 
-    printf_pretty_size( "Read $in{contains}{name} (%d)\n", -s $in{contains}{name} );
+    printf_pretty_size( "Read $in{contains}{name} (%s)\n", -s $in{contains}{name} );
     open my($fh), '<', $in{contains}{name}
         or die "Can't read $in{contains}{name}: $!";
     $vertices += 0;
@@ -53,7 +71,7 @@ my $vertices = 0;
 }
 
 {
-    printf_pretty_size( "Read $in{shares}{name} (%d)\n", -s $in{shares}{name} );
+    printf_pretty_size( "Read $in{shares}{name} (%s)\n", -s $in{shares}{name} );
     open my($fh), '<', $in{shares}{name}
         or die "Can't read $in{shares}{name}: $!";
     vertex_read( $fh, $vertices, 'shares(%x,%x).', 2 );
@@ -66,7 +84,7 @@ my $vertices = 0;
 #
 {
     say 'missing(vertex(Id)).';
-    printf_pretty_size( "Read $in{size}{name} (%d)\n", -s $in{size}{name} );
+    printf_pretty_size( "Read $in{size}{name} (%s)\n", -s $in{size}{name} );
     open my($fh), '<', $in{size}{name}
         or die "Can't read $in{size}{name}: $!";
     vertex_read( $fh, $vertices, 'size(%x,', 1 );
@@ -81,7 +99,7 @@ my $contained = 0;
     
     for my $nm ( qw( contains shares ) ) {
         my $file = $in{$nm}{name};
-        printf_pretty_size( "Read $file (%d)\n", -s $file );
+        printf_pretty_size( "Read $file (%s)\n", -s $file );
         open my($fh), '<', $file
             or die "Can't open $file: $!";
         add_edges( $fulledge, $contained, $fh, "$nm(%x,%x)." );
@@ -137,8 +155,8 @@ my $contained = 0;
         (undef,$yedge,$x) = Judy::L::Next($fulledge,$x);
     }
     Judy::L::Free($fulledge);
-    printf_pretty_size( "Wrote $out{fulledge}{name} (%d)\n", -s $out{fulledge}{name} );
-    printf_pretty_size( "Wrote $out{rulledge}{name} (%d)\n", -s $out{rulledge}{name} );
+    printf_pretty_size( "Wrote $out{fulledge}{name} (%s)\n", -s $out{fulledge}{name} );
+    printf_pretty_size( "Wrote $out{rulledge}{name} (%s)\n", -s $out{rulledge}{name} );
 }
 
 sub trace {
@@ -147,9 +165,8 @@ sub trace {
     }
 }
 
-BEGIN {
-    require Inline;
-    my $c_src = <<'__END_Inline::C__';
+__DATA__
+__C__
 #include <Judy.h>
 
 void
@@ -278,24 +295,4 @@ add_edges( SV *fulledge_sv, SV *contained_sv, PerlIO *fh, char *format ) {
     SvREFCNT_dec(line_sv);
     sv_setiv(fulledge_sv,fulledge);
     sv_setiv(contained_sv,contained);
-}
-__END_Inline::C__
-    Inline->import(
-        C => $c_src,
-        Config => (
-            OPTIMIZE => '-g',
-            CLEAN_AFTER_BUILD => 1,
-            INC => join( ' ',
-                map { "-I$_" }
-                Alien::Judy::inc_dirs()
-            ),
-            LIBS => join( ' ',
-                (
-                    map { "-L$_" }
-                    Alien::Judy::lib_dirs()
-                ),
-                '-lJudy'
-            )
-        )
-    );
 }

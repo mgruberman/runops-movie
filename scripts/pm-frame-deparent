@@ -10,6 +10,23 @@ use Carp::Always;
 use Alien::Judy;
 use Judy::1;
 use Judy::L;
+use Inline
+    C => 'DATA',
+    ( # Config:
+	OPTIMIZE => '-g',
+	CLEAN_AFTER_BUILD => 1,
+	INC => join( ' ',
+		     map { "-I$_" }
+		     Alien::Judy::inc_dirs()
+	),
+	LIBS => join( ' ',
+		      (
+		          map { "-L$_" }
+		          Alien::Judy::lib_dirs()
+		      ),
+		      '-lJudy'
+	)
+    );
 
 GetOptions(
     help         => sub { die 'pod2usage( -verbose => 2 )' },
@@ -33,7 +50,7 @@ if ( $dir ) {
 my $rulledge;
 {
     printf_pretty_size(
-        "Read $in_rulledge (%d)\n",
+        "Read $in_rulledge (%s)\n",
         -s $in_rulledge
     );
     open my($fh), '<', $in_rulledge
@@ -44,7 +61,7 @@ my $rulledge;
 my $arity;
 {
     printf_pretty_size(
-        "Read $in_arity (%d)\n",
+        "Read $in_arity (%s)\n",
         -s $in_arity
     );
     open my($fh), '<', $in_arity
@@ -60,7 +77,7 @@ open my($ofh), '>', $out_edge
 
 deparent( $ifh, $ofh, $rulledge, $arity );
 printf_pretty_size(
-    "Wrote $out_edge (%d)\n",
+    "Wrote $out_edge (%s)\n",
     -s $out_edge
 );
 
@@ -75,23 +92,8 @@ printf_pretty_size(
     Judy::L::Free($rulledge);
 }
 
-use Inline
-    C => <<'__END_Inline::C__',
-    Config => (
-        OPTIMIZE => '-g',
-        CLEAN_AFTER_BUILD => 1,
-        INC => join( ' ',
-            map { "-I$_" }
-            Alien::Judy::inc_dirs()
-        ),
-        LIBS => join( ' ',
-            (
-                map { "-L$_" }
-                Alien::Judy::lib_dirs()
-            ),
-            '-lJudy'
-        )
-    );
+__DATA__
+__C__
 #include <Judy.h>
 
 void*
@@ -191,13 +193,12 @@ deparent( PerlIO *ifh, PerlIO *ofh, void *rulledge, void *arity ) {
             }
 
             /* Write best parent */
-            PerlIO_printf(ofh,"edge(%x,%x).\\n",best_x,y);
+            PerlIO_printf(ofh,"edge(%x,%x).\n",best_x,y);
         }
         else {
-            PerlIO_printf(ofh,"edge(0,%x).\\n",y);
+            PerlIO_printf(ofh,"edge(0,%x).\n",y);
         }
 
     }
     SvREFCNT_dec(line_sv);
 }
-__END_Inline::C__
