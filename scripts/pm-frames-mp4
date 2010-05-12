@@ -12,6 +12,8 @@ GetOptions(
 )
   or die;
 
+system "find @{[ $frames =~ m{^(/tmp/[^/]+)} ]} -ls";
+
 system qw(
   ffmpeg
   -y

@@ -15,7 +15,6 @@ GetOptions(
   or die "@ARGV";
 
 system 'pm-frame-read',       '--dir', $dir, '--in', $in;
-#system 'env', 'LD_PRELOAD=/home/josh/perl5/perlbrew/perls/perl-5.12.0/lib/site_perl/5.12.0/i686-linux-thread-multi-64int/Alien/Judy/libJudy.so', 'LD_DEBUG=all',
 system 'pm-frame-make-graph', '--dir', $dir;
 system 'pm-frame-deparent',   '--dir', $dir;
 system 'pm-frame-redge',      '--dir', $dir;
