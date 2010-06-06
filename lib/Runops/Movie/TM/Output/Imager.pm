@@ -193,7 +193,9 @@ sub text
                            x     => $x, 
                            y     => $y, 
                            color => $self->{SOLID_FONT},
-                           size  => $size           );
+                           size  => $size           )
+       or die $self->{IMAGE}{ERRSTR};
+
    }
    return 1;
 }
