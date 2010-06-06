@@ -72,7 +72,8 @@ sub save
 {
    my $self = shift;
    my ( $filename ) = @_;
-   $self->{IMAGE}->write( file=>$filename );
+   $self->{IMAGE}->write( file=>$filename )
+       or die $self->{IMAGE}{ERRSTR};
    return 1;
 }
 
