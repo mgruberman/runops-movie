@@ -107,7 +107,8 @@ sub rect
                         ymin   => $y1, 
                         xmax   => $x2, 
                         ymax   => $y2, 
-                        filled => 0      );
+                        filled => 0      )
+       or die $self->{IMAGE}{ERRSTR};
 
    return 1;
 }
