@@ -43,6 +43,7 @@ my $build = Module::Build->new(
 
         'ExtUtils::CBuilder'    => 0,
 
+        'Carp::Always'          => 0,
         'Runops::Trace'         => 0,
         'Internals::DumpArenas' => '0.08',
         'autodie'               => 0,

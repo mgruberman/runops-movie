@@ -3,7 +3,9 @@ use 5.010_000;
 use strict;
 use warnings;
 use feature ':5.10';
-use autodie 'system';
+use autodie ':all';
+use Carp::Always;
+
 use IPC::Run 'run';
 use File::Temp 'tempdir';
 use Getopt::Long 'GetOptions';
