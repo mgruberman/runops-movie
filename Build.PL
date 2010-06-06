@@ -3,6 +3,33 @@ use 5.010_000;
 use strict;
 use warnings;
 use Module::Build 0.26;
+use Cwd ();
+use File::Spec ();
+use File::Temp ();
+
+{
+    my ( $fh, $name ) = File::Temp::tempfile(
+        SUFFIX => '.mp4',
+        UNLINK => 1,
+    );
+
+    my $cwd = Cwd::cwd();
+    my $frames = File::Spec->catfile(
+        $cwd,
+        'data',
+        'frame-%06d.png',
+    );
+    my $cmd = "ffmpeg -y -v 0 -qscale 5 -r 20 -b 9600 -i $frames $name";
+    say "Testing: $cmd";
+    system $cmd;
+
+    if ( $?
+         || ( $^O eq 'MSWin32'
+              && $^E ) ) {
+        say "Runops::Movie ffmpeg is required to use this module, please install it manually.";
+        exit 0;
+    }
+}
 
 my $build = Module::Build->new(
     module_name => 'Runops::Movie',

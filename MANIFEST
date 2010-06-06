@@ -1,5 +1,13 @@
 Build.PL
 Changes
+data/frame-000002.png
+data/frame-000003.png
+data/frame-000004.png
+data/frame-000005.png
+data/frame-000006.png
+data/frame-000007.png
+data/frame-000008.png
+data/frame-000009.png
 fonts/ImUgly.ttf
 lib/Devel/Movie.pm
 lib/Runops/Movie.pm
