@@ -26,6 +26,8 @@ use constant COLORS => {
     PVNV => 'yellow',
     PVHV => 'brown',
 };
+use Judy::1;
+use Judy::L;
 
 my %seen;
 sub TIEHASH {
