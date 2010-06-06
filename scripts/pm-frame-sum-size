@@ -6,11 +6,28 @@ use feature ':5.10';
 use Getopt::Long qw( GetOptions );
 use Runops::Movie::Util qw( pretty_size );
 use File::Spec::Functions qw( catfile );
-use Carp ();
-use Judy ();
-use Inline C => Config => OPTIMIZE => '-g', CLEAN_AFTER_BUILD => 0;
+use Carp::Always;
+use Alien::Judy;
+use Judy::L;
+use Inline
+    C => 'DATA',
+    ( # Config:
+        OPTIMIZE => '-g',
+        CLEAN_AFTER_BUILD => 1,
+        INC => join( ' ',
+            map { "-I$_" }
+            Alien::Judy::inc_dirs()
+        ),
+        LIBS => join( ' ',
+            (
+                map { "-L$_" }
+                Alien::Judy::lib_dirs()
+            ),
+            '-lJudy'
+        )
+    );
 
-$SIG{__DIE__} = \&Carp::confess;
+
 
 GetOptions(
     help            => sub { die 'pod2usage( -verbose => 2 )' },
@@ -30,10 +47,42 @@ if ( $dir ) {
     $out_size       //= catfile( $dir, 'frame.sum-size' );
 }
 
+my $vertex_size;
+{
+    say "Read $in_vertex_size (@{[ pretty_size( -s $in_vertex_size ) ]})";
+    open my($fh), '<', $in_vertex_size
+        or die "Can't open $in_vertex_size: $!";
+    $vertex_size = read_size( $fh );
+}
 
-use Inline C => <<"...a";
-#line @{[ 2 + __LINE__ ]} "@{[ __FILE__ ]}"
+my $edge;
+{
+    say "Read $in_edge (@{[ pretty_size( -s $in_edge ) ]})";
+    open my($fh), '<', $in_edge
+        or die "Can't open $in_edge: $!";
+    $edge = read_edge( $fh );
+}
+
+say 'Summing vertices';
+my $sums = calc_sum( $vertex_size, $edge, 0 );
+
+open my($fh), '>', $out_size
+    or die "Can't open $out_size for writing: $!";
+
+my ( undef, $size, $x ) = Judy::L::First( $sums, 0 );
+while ( defined $x ) {
+    printf {$fh} "size(%x,%d).\n", $x, $size
+        or die "Can't write to $out_size: $!";
+    ( undef, $size, $x ) = Judy::L::Next( $sums, $x );
+}
+close $fh
+    or die "Can't flush $out_size: $!";
+say "Wrote $out_size (@{[ pretty_size( -s $out_size ) ]})";
+
+__DATA__
+__C__
 #include <Judy.h>
+
 void*
 read_size(PerlIO *fh) {
     SV *line_sv;
@@ -58,19 +107,7 @@ read_size(PerlIO *fh) {
 
     return size;
 }
-...a
 
-my $vertex_size;
-{
-    say "Read $in_vertex_size (@{[ pretty_size( -s $in_vertex_size ) ]})";
-    open my($fh), '<', $in_vertex_size
-        or die "Can't open $in_vertex_size: $!";
-    $vertex_size = read_size( $fh );
-}
-
-my $edge;
-use Inline C => <<"...b";
-#line @{[ 2 + __LINE__ ]}
 #include <Judy.h>
 void*
 read_edge(PerlIO *fh) {
@@ -96,17 +133,6 @@ read_edge(PerlIO *fh) {
 
     return edge;
 }
-...b
-{
-    say "Read $in_edge (@{[ pretty_size( -s $in_edge ) ]})";
-    open my($fh), '<', $in_edge
-        or die "Can't open $in_edge: $!";
-    $edge = read_edge( $fh );
-}
-
-use Inline C => <<"...";
-/* #line @{[ 2 + __LINE__ ]} */
-#include <Judy.h>
 
 int
 _sum(Pvoid_t const vertex_size, Pvoid_t const edge, Word_t const x, Pvoid_t *sums) {
@@ -160,20 +186,3 @@ calc_sum( void* vertex_size, void* edge, int x ) {
     _sum( vertex_size, edge, x, sums );
     return *sums;
 }
-...
-
-say 'Summing vertices';
-my $sums = calc_sum( $vertex_size, $edge, 0 );
-
-open my($fh), '>', $out_size
-    or die "Can't open $out_size for writing: $!";
-
-my ( undef, $size, $x ) = Judy::L::First( $sums, 0 );
-while ( defined $x ) {
-    printf {$fh} "size(%x,%d).\n", $x, $size
-        or die "Can't write to $out_size: $!";
-    ( undef, $size, $x ) = Judy::L::Next( $sums, $x );
-}
-close $fh
-    or die "Can't flush $out_size: $!";
-say "Wrote $out_size (@{[ pretty_size( -s $out_size ) ]})";

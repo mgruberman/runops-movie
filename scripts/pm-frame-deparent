@@ -4,13 +4,29 @@ use warnings;
 use 5.010_000;
 use feature ':5.10';
 use Getopt::Long qw( GetOptions );
-use Runops::Movie::Util qw( pretty_size );
+use Runops::Movie::Util qw( printf_pretty_size );
 use File::Spec::Functions qw( catfile );
-use Carp ();
-use Inline C => Config => OPTIMIZE => '-g', CLEAN_AFTER_BUILD => 0;
-$| = 1;
-
-$SIG{__DIE__} = \&Carp::confess;
+use Carp::Always;
+use Alien::Judy;
+use Judy::1;
+use Judy::L;
+use Inline
+    C => 'DATA',
+    ( # Config:
+	OPTIMIZE => '-g',
+	CLEAN_AFTER_BUILD => 1,
+	INC => join( ' ',
+		     map { "-I$_" }
+		     Alien::Judy::inc_dirs()
+	),
+	LIBS => join( ' ',
+		      (
+		          map { "-L$_" }
+		          Alien::Judy::lib_dirs()
+		      ),
+		      '-lJudy'
+	)
+    );
 
 GetOptions(
     help         => sub { die 'pod2usage( -verbose => 2 )' },
@@ -22,8 +38,6 @@ GetOptions(
 )
   or die 'pod2usage( -verbose => 2 )';
 
-use Judy ();
-
 # --dir automagic
 #
 if ( $dir ) {
@@ -33,9 +47,55 @@ if ( $dir ) {
     $out_edge    //= catfile( $dir, 'frame.edge'     );
 }
 
-use Inline C => <<"...a";
-#line @{[ 2 + __LINE__ ]}
+my $rulledge;
+{
+    printf_pretty_size(
+        "Read $in_rulledge (%s)\n",
+        -s $in_rulledge
+    );
+    open my($fh), '<', $in_rulledge
+        or die "Can't open $in_rulledge: $!";
+    $rulledge = read_rulledge($fh);
+}
+
+my $arity;
+{
+    printf_pretty_size(
+        "Read $in_arity (%s)\n",
+        -s $in_arity
+    );
+    open my($fh), '<', $in_arity
+        or die "Can't open $in_arity: $!";
+    $arity = read_arity($fh);
+}
+
+
+open my($ifh), '<', $in_vertex
+    or die "Can't open $in_vertex: $!";
+open my($ofh), '>', $out_edge
+    or die "Can't open $out_edge: $!";
+
+deparent( $ifh, $ofh, $rulledge, $arity );
+printf_pretty_size(
+    "Wrote $out_edge (%s)\n",
+    -s $out_edge
+);
+
+# Free judy
+{
+    Judy::L::Free($arity);
+    my ( undef, $yedge, $x ) = Judy::L::First( $rulledge, 0 );
+    while ( defined $x ) {
+        Judy::1::Free( $yedge );
+        ( undef, $yedge, $x ) = Judy::L::Next( $rulledge, $x );
+    }
+    Judy::L::Free($rulledge);
+}
+
+__DATA__
+__C__
 #include <Judy.h>
+
 void*
 read_rulledge(PerlIO *fh) {
     SV *line_sv;
@@ -62,19 +122,7 @@ read_rulledge(PerlIO *fh) {
 
     return rulledge;
 }
-...a
 
-my $rulledge;
-{
-    say "Read $in_rulledge (@{[ pretty_size( -s $in_rulledge ) ]})";
-    open my($fh), '<', $in_rulledge
-        or die "Can't open $in_rulledge: $!";
-    $rulledge = read_rulledge($fh);
-}
-
-use Inline C => <<"...b";
-#line @{[ 2 + __LINE__ ]}
-#include <Judy.h>
 void*
 read_arity(PerlIO *fh) {
     SV *line_sv;
@@ -99,24 +147,7 @@ read_arity(PerlIO *fh) {
 
     return arity;
 }
-...b
 
-my $arity;
-{
-    say "Read $in_arity (@{[ pretty_size( -s $in_arity ) ]})";
-    open my($fh), '<', $in_arity
-        or die "Can't open $in_arity: $!";
-    $arity = read_arity($fh);
-}
-
-
-open my($ifh), '<', $in_vertex
-    or die "Can't open $in_vertex: $!";
-open my($ofh), '>', $out_edge
-    or die "Can't open $out_edge: $!";
-use Inline C => <<"...c";
-#line @{[ 2 + __LINE__ ]}
-#include <Judy.h>
 void
 deparent( PerlIO *ifh, PerlIO *ofh, void *rulledge, void *arity ) {
     SV *line_sv;
@@ -162,27 +193,12 @@ deparent( PerlIO *ifh, PerlIO *ofh, void *rulledge, void *arity ) {
             }
 
             /* Write best parent */
-            PerlIO_printf(ofh,"edge(%x,%x).\\n",best_x,y);
+            PerlIO_printf(ofh,"edge(%x,%x).\n",best_x,y);
         }
         else {
-            PerlIO_printf(ofh,"edge(0,%x).\\n",y);
+            PerlIO_printf(ofh,"edge(0,%x).\n",y);
         }
 
     }
     SvREFCNT_dec(line_sv);
-}
-...c
-
-deparent( $ifh, $ofh, $rulledge, $arity );
-say "Wrote $out_edge (@{[ pretty_size( -s $out_edge ) ]})";
-
-# Free judy
-{
-    Judy::L::Free($arity);
-    my ( undef, $yedge, $x ) = Judy::L::First( $rulledge, 0 );
-    while ( defined $x ) {
-        Judy::1::Free( $yedge );
-        ( undef, $yedge, $x ) = Judy::L::Next( $rulledge, $x );
-    }
-    Judy::L::Free($rulledge);
 }
