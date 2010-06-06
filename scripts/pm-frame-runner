@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use feature ':5.10';
 use autodie 'system';
+use Carp::Always;
 use Getopt::Long qw( GetOptions );
 use POSIX qw( ENOENT );
 
