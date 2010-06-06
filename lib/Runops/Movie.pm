@@ -6,7 +6,7 @@ use feature ':5.10';
 use Runops::Trace ();
 use Internals::DumpArenas ();
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 our $Frame;
 sub tracer {
