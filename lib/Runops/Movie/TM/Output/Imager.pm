@@ -61,7 +61,8 @@ sub _init
                         file  => $self->{FONT_FILE},
                         color => $self->{SOLID_FONT},
                         aa    => 1,
-                        type  => 'ft2' );
+                        type  => 'ft2' )
+       or die $Imager::ERRSTR;
 
    # for profiling: 
    $self->{font_iters} = 0;
