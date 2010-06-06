@@ -173,7 +173,8 @@ sub text
                            color => $self->{ALPHA_FONT},
                            size  => $size           );
 
-      $self->{IMAGE}->rubthrough( src => $self->{ALPHA}, tx=>$x, ty=>$y );
+      $self->{IMAGE}->rubthrough( src => $self->{ALPHA}, tx=>$x, ty=>$y )
+	  or die $self->{IMAGE}{ERRSTR};
    }
    else
    {
