@@ -2,7 +2,7 @@ package Runops::Movie::Util;
 use strict;
 use warnings;
 use Exporter qw( import );
-our @EXPORT_OK = qw( pretty_size rood );
+our @EXPORT_OK = qw( pretty_size rood printf_pretty_size );
 
 sub rood {
     my ( $fn ) = @_;
@@ -30,6 +30,16 @@ sub pretty_size {
     else {
         return "$bytes bytes";
     }
+}
+
+sub printf_pretty_size {
+    my ( $format, @args ) = @_;
+
+    my @reformatted_args =
+	map { pretty_size( $_ ) }
+        @args;
+
+    printf "$format\n", @reformatted_args;
 }
 
 'Go drinking with mst';
