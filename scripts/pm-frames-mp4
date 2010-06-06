@@ -12,11 +12,6 @@ GetOptions(
 )
   or die;
 
-system qw(
-  ffmpeg
-  -y
-  -qscale 5
-  -r 20
-  -b 9600
-  -i), $frames,
-  $movie;
+system "find @{[ $frames =~ m{^(/tmp/[^/]+)} ]} -ls";
+
+exec "ffmpeg -y -v 0 -qscale 5 -r 20 -b 9600 -i $frames $movie >/dev/null </dev/null";
