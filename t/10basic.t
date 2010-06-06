@@ -4,12 +4,29 @@ use warnings;
 use Test::More tests => 4;
 use IPC::Run qw( run );
 use File::Temp qw( tempdir tempfile );
+use File::Spec ();
 
 my $moviedir = tempdir( CLEANUP => 1 );
 my $log_nm = "$moviedir/movie.log";
 diag( "movie.log = $log_nm" );
 
-$ENV{PATH} = "blib/script:$ENV{PATH}";
+# Add blib/script to $ENV{PATH}
+my $script_dir = File::Spec->catdir( 'blib', 'script' );
+if ( defined $ENV{PATH} ) {
+    $ENV{PATH} = "$script_dir$Config::Config{path_sep}$ENV{PATH}";
+}
+else {
+    $ENV{PATH} = $script_dir;
+}
+
+# Add blib/lib to $ENV{PERL5LIB}
+my $lib_dir = File::Spec->catdir( 'blib', 'lib' );
+if ( defined $ENV{PERL5LIB} ) {
+    $ENV{PERL5LIB} = "$lib_dir$Config::Config{path_sep}$ENV{PERL5LIB}";
+}
+else {
+    $ENV{PERL5LIB} = $lib_dir;
+}
 
 # Capture a movie log
 ok(
