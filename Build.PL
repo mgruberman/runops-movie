@@ -50,6 +50,7 @@ my $build = Module::Build->new(
         'IPC::System::Simple'   => 0,
         'Judy'                  => '0.13',
         'Inline::C'             => 0,
+        'Imager'                => 0,
 
         # while Judy depends on Alien::Judy, I also use Judy.h directly from
         # Inline::C so I want to ensure that Judy.h is specifically available.
