@@ -53,7 +53,11 @@ diag( "frames = $frames" );
 seek $log_fh, 0, 0;
 ok(
     run(
-        [ 'pm-frame-runner', '--dir', $moviedir, '--movie', "$moviedir/movie.mp4" ],
+        [
+            'pm-frame-runner',
+                '--dir',   $moviedir,
+                '--movie', "$moviedir/movie.mp4"
+        ],
         '<', $log_fh
     ),
     'Rendered the movie log to a set of pngs'
