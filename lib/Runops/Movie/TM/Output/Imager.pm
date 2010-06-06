@@ -96,7 +96,8 @@ sub rect
                         ymin   => $y1, 
                         xmax   => $x2, 
                         ymax   => $y2, 
-                        filled => 1      );
+                        filled => 1      )
+       or die $self->{IMAGE}{ERRSTR};
                         
    return 1 if ( $area < 3 );
 
